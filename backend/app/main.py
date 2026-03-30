@@ -9,7 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.commands import detect_command
 from app.config import settings
-from app.claude_code import get_claude_code_response
+from app.claude_code import ClaudeCodeSettings, current_settings, get_claude_code_response
 from app.llm import get_claude_response
 from app.models import (
     CommandType,
@@ -86,6 +86,64 @@ async def resume_session(session_id: str):
         files=session.files[:50],
         recent_commits=session.recent_commits,
         conversation=session.conversation,
+    )
+
+
+class RenameSessionRequest(BaseModel):
+    name: str
+
+
+@app.post("/session/{session_id}/rename")
+async def rename_session(session_id: str, req: RenameSessionRequest):
+    """Rename a session."""
+    session = get_session(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    session.project_name = req.name
+    session._save()
+    return {"ok": True, "name": req.name}
+
+
+class SettingsResponse(BaseModel):
+    model: str
+    effort: str
+    allowed_tools: list[str]
+    use_claude_code: bool
+
+
+class UpdateSettingsRequest(BaseModel):
+    model: str | None = None
+    effort: str | None = None
+    allowed_tools: list[str] | None = None
+
+
+@app.get("/settings", response_model=SettingsResponse)
+async def get_settings():
+    """Get current Claude Code settings."""
+    import app.claude_code as cc
+    return SettingsResponse(
+        model=cc.current_settings.model,
+        effort=cc.current_settings.effort,
+        allowed_tools=cc.current_settings.allowed_tools,
+        use_claude_code=settings.use_claude_code,
+    )
+
+
+@app.post("/settings", response_model=SettingsResponse)
+async def update_settings(req: UpdateSettingsRequest):
+    """Update Claude Code settings."""
+    import app.claude_code as cc
+    if req.model is not None:
+        cc.current_settings.model = req.model
+    if req.effort is not None:
+        cc.current_settings.effort = req.effort
+    if req.allowed_tools is not None:
+        cc.current_settings.allowed_tools = req.allowed_tools
+    return SettingsResponse(
+        model=cc.current_settings.model,
+        effort=cc.current_settings.effort,
+        allowed_tools=cc.current_settings.allowed_tools,
+        use_claude_code=settings.use_claude_code,
     )
 
 

@@ -1,6 +1,6 @@
-import React, { useCallback, useState } from 'react';
-import { Alert, SafeAreaView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { transcribeAudio, sendText, requestTTS } from '../api';
+import React, { useCallback, useEffect, useState } from 'react';
+import { ActionSheetIOS, Alert, Platform, SafeAreaView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { transcribeAudio, sendText, requestTTS, updateSettings, getSettings, renameSession } from '../api';
 import { OptionsDisplay } from '../components/OptionsDisplay';
 import { RecordButton } from '../components/RecordButton';
 import { StatusIndicator } from '../components/StatusIndicator';
@@ -26,6 +26,13 @@ export function VoiceScreen({ onLeaveSession }: Props) {
 
   const [statusDetail, setStatusDetail] = useState<string | undefined>();
   const [readingEntryId, setReadingEntryId] = useState<string | null>(null);
+  const [currentModel, setCurrentModel] = useState('sonnet');
+  const [displayName, setDisplayName] = useState(projectName);
+
+  useEffect(() => { setDisplayName(projectName); }, [projectName]);
+  useEffect(() => {
+    getSettings().then((s) => setCurrentModel(s.model)).catch(() => {});
+  }, []);
   const { playAudio, stopAudio, replayAudio, currentWordIndex } = useAudioPlayer(handlePlaybackFinished);
   const { startRecording, stopRecording } = useAudioRecorder();
 
@@ -150,6 +157,35 @@ export function VoiceScreen({ onLeaveSession }: Props) {
     }
   }
 
+  function handleRename() {
+    Alert.prompt('Rename session', 'Enter a name:', (name) => {
+      if (name?.trim()) {
+        setDisplayName(name.trim());
+        if (sessionId) renameSession(sessionId, name.trim());
+      }
+    }, 'plain-text', displayName ?? '');
+  }
+
+  function handleModelSwitch() {
+    if (Platform.OS === 'ios') {
+      ActionSheetIOS.showActionSheetWithOptions(
+        {
+          title: `Current: ${currentModel}`,
+          options: ['Haiku (fastest)', 'Sonnet (balanced)', 'Opus (smartest)', 'Cancel'],
+          cancelButtonIndex: 3,
+        },
+        (index) => {
+          const models = ['haiku', 'sonnet', 'opus'];
+          if (index < 3) {
+            const model = models[index];
+            setCurrentModel(model);
+            updateSettings({ model });
+          }
+        },
+      );
+    }
+  }
+
   function handleLeave() {
     clearSession();
     onLeaveSession();
@@ -164,14 +200,21 @@ export function VoiceScreen({ onLeaveSession }: Props) {
         <TouchableOpacity onPress={handleLeave} style={styles.backBtn}>
           <Text style={styles.backText}>← Back</Text>
         </TouchableOpacity>
-        <Text style={styles.projectName} numberOfLines={1}>
-          {projectName}
-        </Text>
-        <TouchableOpacity onPress={toggleTTS} style={styles.ttsToggle}>
-          <Text style={[styles.ttsText, !ttsEnabled && styles.ttsOff]}>
-            {ttsEnabled ? 'TTS ON' : 'TTS OFF'}
+        <TouchableOpacity onPress={handleRename} style={styles.nameBtn}>
+          <Text style={styles.projectName} numberOfLines={1}>
+            {displayName}
           </Text>
         </TouchableOpacity>
+        <View style={styles.headerRight}>
+          <TouchableOpacity onPress={handleModelSwitch}>
+            <Text style={styles.modelText}>{currentModel}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={toggleTTS}>
+            <Text style={[styles.ttsText, !ttsEnabled && styles.ttsOff]}>
+              {ttsEnabled ? 'TTS' : 'TTS'}
+            </Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       <View style={styles.body}>
@@ -218,13 +261,12 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#0e1628',
   },
-  backBtn: { width: 60 },
+  backBtn: { width: 50 },
   backText: { color: '#00d4ff', fontSize: 14 },
-  projectName: { color: '#eef', fontWeight: '600', fontSize: 16, flex: 1, textAlign: 'center' },
-  ttsToggle: {
-    width: 60,
-    alignItems: 'flex-end',
-  },
+  nameBtn: { flex: 1 },
+  projectName: { color: '#eef', fontWeight: '600', fontSize: 16, textAlign: 'center' },
+  headerRight: { flexDirection: 'row', gap: 10, alignItems: 'center', width: 90, justifyContent: 'flex-end' },
+  modelText: { color: '#ffaa00', fontSize: 11, fontWeight: '600' },
   ttsText: { color: '#00d4ff', fontSize: 11, fontWeight: '600' },
   ttsOff: { color: '#556' },
   body: { flex: 1, paddingHorizontal: 16, paddingTop: 12 },

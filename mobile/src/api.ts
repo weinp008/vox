@@ -104,3 +104,32 @@ export async function requestTTS(text: string): Promise<string> {
   const data = await res.json();
   return data.audio_url;
 }
+
+export interface SonarSettings {
+  model: string;
+  effort: string;
+  allowed_tools: string[];
+  use_claude_code: boolean;
+}
+
+export async function getSettings(): Promise<SonarSettings> {
+  const res = await fetch(`${BASE_URL}/settings`);
+  return res.json();
+}
+
+export async function updateSettings(updates: Partial<Pick<SonarSettings, 'model' | 'effort'>>): Promise<SonarSettings> {
+  const res = await fetch(`${BASE_URL}/settings`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(updates),
+  });
+  return res.json();
+}
+
+export async function renameSession(sessionId: string, name: string): Promise<void> {
+  await fetch(`${BASE_URL}/session/${sessionId}/rename`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name }),
+  });
+}
