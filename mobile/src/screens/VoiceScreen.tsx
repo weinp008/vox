@@ -20,15 +20,18 @@ export function VoiceScreen({ onLeaveSession }: Props) {
   } = useSession();
 
   const handlePlaybackFinished = useCallback(() => {
+    setReadingEntryId(null);
     setUIState('idle');
   }, [setUIState]);
 
   const [statusDetail, setStatusDetail] = useState<string | undefined>();
-  const { playAudio, stopAudio, replayAudio } = useAudioPlayer(handlePlaybackFinished);
+  const [readingEntryId, setReadingEntryId] = useState<string | null>(null);
+  const { playAudio, stopAudio, replayAudio, currentWordIndex } = useAudioPlayer(handlePlaybackFinished);
   const { startRecording, stopRecording } = useAudioRecorder();
 
   function handleStopAudio() {
     stopAudio();
+    setReadingEntryId(null);
     setUIState('idle');
   }
 
@@ -39,18 +42,21 @@ export function VoiceScreen({ onLeaveSession }: Props) {
     if (!didReplay) setUIState('idle');
   }
 
-  /** "Ask Claude about this" — sends selected text as a follow-up prompt */
   async function handleAskClaude(text: string) {
     if (uiState !== 'idle') return;
     try {
-      const entryId = addUserMessage(`[Re: "${text.slice(0, 50)}${text.length > 50 ? '...' : ''}"] Tell me more about this.`);
+      const preview = text.slice(0, 50) + (text.length > 50 ? '...' : '');
+      const entryId = addUserMessage(`Tell me more about: "${preview}"`);
       setUIState('processing');
+      setStatusDetail('Waiting for Claude...');
       const currentState = lastResponse?.state ?? 'idle';
       const response = await sendText(sessionId!, `Explain this in more detail: ${text}`, currentState, ttsEnabled);
       setEntryResponse(entryId, response);
+      setStatusDetail(undefined);
       if (ttsEnabled && response.audio_url) {
         setUIState('listening');
-        await playAudio(response.audio_url);
+        setReadingEntryId(entryId);
+        await playAudio(response.audio_url, response.response_text);
       } else {
         setUIState('idle');
       }
@@ -60,13 +66,18 @@ export function VoiceScreen({ onLeaveSession }: Props) {
     }
   }
 
-  async function handleReadAloud(text: string) {
+  async function handleReadAloud(text: string, entryId: string) {
     if (uiState !== 'idle') return;
     try {
       setUIState('listening');
+      setReadingEntryId(entryId);
+      setStatusDetail('Generating speech...');
       const audioBase64 = await requestTTS(text);
-      await playAudio(audioBase64);
-    } catch {
+      setStatusDetail(undefined);
+      await playAudio(audioBase64, text);
+    } catch (e: any) {
+      console.error('Read aloud error:', e);
+      setReadingEntryId(null);
       setUIState('idle');
     }
   }
@@ -88,13 +99,11 @@ export function VoiceScreen({ onLeaveSession }: Props) {
       const uri = await stopRecording();
       if (!uri) { setUIState('idle'); return; }
 
-      // Step 1: Transcribe
       setUIState('transcribing');
       setStatusDetail('Sending to Whisper...');
       const transcript = await transcribeAudio(uri);
       const entryId = addUserMessage(transcript);
 
-      // Step 2: Send to Claude
       setUIState('processing');
       setStatusDetail('Waiting for Claude...');
       const currentState = lastResponse?.state ?? 'idle';
@@ -102,10 +111,10 @@ export function VoiceScreen({ onLeaveSession }: Props) {
       setEntryResponse(entryId, response);
       setStatusDetail(undefined);
 
-      // Step 3: Play TTS if enabled and available
       if (ttsEnabled && response.audio_url) {
         setUIState('listening');
-        await playAudio(response.audio_url);
+        setReadingEntryId(entryId);
+        await playAudio(response.audio_url, response.response_text);
       } else {
         setUIState('idle');
       }
@@ -115,21 +124,23 @@ export function VoiceScreen({ onLeaveSession }: Props) {
     }
   }
 
-  /** Tap an option or "Select all" to send selection directly */
   async function handleOptionSelect(selection: string) {
     if (uiState !== 'idle') return;
     try {
       const label = selection === 'all' ? 'All options' : `Option ${selection}`;
       const entryId = addUserMessage(label);
       setUIState('processing');
+      setStatusDetail('Waiting for Claude...');
       const text = selection === 'all'
         ? 'User selected all options. Proceed with all of them.'
         : `User selected option ${selection}.`;
       const response = await sendText(sessionId!, text, 'awaiting_response', ttsEnabled);
       setEntryResponse(entryId, response);
+      setStatusDetail(undefined);
       if (ttsEnabled && response.audio_url) {
         setUIState('listening');
-        await playAudio(response.audio_url);
+        setReadingEntryId(entryId);
+        await playAudio(response.audio_url, response.response_text);
       } else {
         setUIState('idle');
       }
@@ -174,6 +185,8 @@ export function VoiceScreen({ onLeaveSession }: Props) {
         <TranscriptDisplay
           conversation={conversation}
           isCompact={isCompact}
+          readingWordIndex={currentWordIndex}
+          readingEntryId={readingEntryId}
           onReadAloud={handleReadAloud}
           onAskClaude={handleAskClaude}
           onToggleCompact={toggleCompact}

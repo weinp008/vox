@@ -3,6 +3,7 @@ import {
   ActionSheetIOS,
   ActivityIndicator,
   Platform,
+  Pressable,
   ScrollView,
   StyleSheet,
   Text,
@@ -15,7 +16,11 @@ import { ConversationEntry } from '../types';
 interface Props {
   conversation: ConversationEntry[];
   isCompact: boolean;
-  onReadAloud: (text: string) => void;
+  /** Index of the word currently being read aloud (-1 if not reading). */
+  readingWordIndex: number;
+  /** ID of the entry currently being read aloud. */
+  readingEntryId: string | null;
+  onReadAloud: (text: string, entryId: string) => void;
   onAskClaude: (text: string) => void;
   onToggleCompact: () => void;
 }
@@ -30,7 +35,35 @@ function summarize(text: string): string {
   return first.length > 80 ? first.slice(0, 77) + '...' : first;
 }
 
-export function TranscriptDisplay({ conversation, isCompact, onReadAloud, onAskClaude, onToggleCompact }: Props) {
+/** Render text with the current word highlighted. */
+function HighlightedText({ text, highlightIndex, style }: { text: string; highlightIndex: number; style: any }) {
+  if (highlightIndex < 0) {
+    return <Text style={style}>{text}</Text>;
+  }
+  const words = text.split(/(\s+)/); // Keep whitespace as separate tokens
+  let wordIdx = 0;
+  return (
+    <Text style={style}>
+      {words.map((token, i) => {
+        if (/^\s+$/.test(token)) {
+          return token; // whitespace, render as-is
+        }
+        const isHighlighted = wordIdx === highlightIndex;
+        wordIdx++;
+        return (
+          <Text key={i} style={isHighlighted ? styles.highlightedWord : undefined}>
+            {token}
+          </Text>
+        );
+      })}
+    </Text>
+  );
+}
+
+export function TranscriptDisplay({
+  conversation, isCompact, readingWordIndex, readingEntryId,
+  onReadAloud, onAskClaude, onToggleCompact,
+}: Props) {
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const scrollRef = useRef<ScrollView>(null);
 
@@ -38,7 +71,7 @@ export function TranscriptDisplay({ conversation, isCompact, onReadAloud, onAskC
     setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100);
   }, [conversation.length, conversation[conversation.length - 1]?.response]);
 
-  function handleLongPress(textFromHere: string, fullText: string, id: string) {
+  function showMenu(textFromHere: string, fullText: string, id: string, entryId: string) {
     if (Platform.OS === 'ios') {
       ActionSheetIOS.showActionSheetWithOptions(
         {
@@ -46,7 +79,7 @@ export function TranscriptDisplay({ conversation, isCompact, onReadAloud, onAskC
           cancelButtonIndex: 4,
         },
         (index) => {
-          if (index === 0) onReadAloud(textFromHere);
+          if (index === 0) onReadAloud(textFromHere, entryId);
           if (index === 1) onAskClaude(textFromHere);
           if (index === 2) copyText(textFromHere, id);
           if (index === 3) copyText(fullText, id);
@@ -84,6 +117,7 @@ export function TranscriptDisplay({ conversation, isCompact, onReadAloud, onAskC
       {conversation.map((entry, i) => {
         const isLast = i === conversation.length - 1;
         const showFull = isLast || !isCompact;
+        const isBeingRead = readingEntryId === entry.id;
 
         return (
           <View key={entry.id} style={[styles.entry, !isLast && isCompact && styles.entryCompact]}>
@@ -94,22 +128,29 @@ export function TranscriptDisplay({ conversation, isCompact, onReadAloud, onAskC
             </View>
 
             {entry.response ? (
-              <View style={styles.responseBubble}>
+              <View style={[styles.responseBubble, isBeingRead && styles.responseBubbleReading]}>
                 {showFull ? (
                   <>
                     {splitIntoParagraphs(entry.response.response_text).map((para, pi) => {
-                      const textFromHere = splitIntoParagraphs(entry.response!.response_text).slice(pi).join('\n\n');
+                      const allParas = splitIntoParagraphs(entry.response!.response_text);
+                      const textFromHere = allParas.slice(pi).join('\n\n');
+                      // Calculate word offset for this paragraph
+                      const wordsBeforePara = allParas.slice(0, pi).join(' ').split(/\s+/).filter(Boolean).length;
+                      const paraHighlightIndex = isBeingRead
+                        ? readingWordIndex - wordsBeforePara
+                        : -1;
                       return (
-                        <TouchableOpacity
+                        <Pressable
                           key={pi}
-                          activeOpacity={0.7}
-                          onLongPress={() => handleLongPress(textFromHere, entry.response!.response_text, `${entry.id}-${pi}`)}
-                          delayLongPress={400}
+                          onLongPress={() => showMenu(textFromHere, entry.response!.response_text, `${entry.id}-${pi}`, entry.id)}
+                          delayLongPress={500}
                         >
-                          <Text style={[styles.responseText, pi > 0 && styles.paragraphGap]}>
-                            {para}
-                          </Text>
-                        </TouchableOpacity>
+                          <HighlightedText
+                            text={para}
+                            highlightIndex={paraHighlightIndex}
+                            style={[styles.responseText, pi > 0 && styles.paragraphGap]}
+                          />
+                        </Pressable>
                       );
                     })}
                     {entry.response.timing && (
@@ -167,9 +208,17 @@ const styles = StyleSheet.create({
     borderLeftWidth: 2,
     borderLeftColor: '#00d4ff',
   },
+  responseBubbleReading: {
+    borderLeftColor: '#00ff88',
+  },
   responseText: { color: '#eef', fontSize: 14, lineHeight: 20 },
   responseTextCompact: { color: '#889', fontSize: 13 },
   paragraphGap: { marginTop: 10 },
+  highlightedWord: {
+    backgroundColor: '#00d4ff33',
+    color: '#00d4ff',
+    borderRadius: 2,
+  },
   thinkingBubble: {
     alignSelf: 'flex-start',
     backgroundColor: '#0e1628',
