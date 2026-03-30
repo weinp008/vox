@@ -1,5 +1,5 @@
 import React, { useCallback } from 'react';
-import { Alert, SafeAreaView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Alert, Pressable, SafeAreaView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { sendPrompt } from '../api';
 import { OptionsDisplay } from '../components/OptionsDisplay';
 import { RecordButton } from '../components/RecordButton';
@@ -21,8 +21,13 @@ export function VoiceScreen({ onLeaveSession }: Props) {
     setUIState('idle');
   }, [setUIState]);
 
-  const { playAudio } = useAudioPlayer(handlePlaybackFinished);
+  const { playAudio, stopAudio } = useAudioPlayer(handlePlaybackFinished);
   const { startRecording, stopRecording } = useAudioRecorder();
+
+  function handleInterruptTTS() {
+    stopAudio();
+    setUIState('idle');
+  }
 
   async function handlePressIn() {
     if (uiState !== 'idle') return;
@@ -39,6 +44,13 @@ export function VoiceScreen({ onLeaveSession }: Props) {
     if (uiState !== 'recording') return;
     try {
       const uri = await stopRecording();
+
+      // Short press — cancelled, go back to idle
+      if (!uri) {
+        setUIState('idle');
+        return;
+      }
+
       setUIState('processing');
 
       const currentState = lastResponse?.state ?? 'idle';
@@ -77,14 +89,23 @@ export function VoiceScreen({ onLeaveSession }: Props) {
         <View style={{ width: 80 }} />
       </View>
 
-      <View style={styles.body}>
+      {/* Tap anywhere in the body to interrupt TTS */}
+      <Pressable
+        style={styles.body}
+        onPress={uiState === 'listening' ? handleInterruptTTS : undefined}
+      >
         {showOptions && <OptionsDisplay options={lastResponse!.options!} />}
         <TranscriptDisplay response={lastResponse} />
-      </View>
+      </Pressable>
 
       <View style={styles.controls}>
         <StatusIndicator uiState={uiState} />
-        <RecordButton uiState={uiState} onPressIn={handlePressIn} onPressOut={handlePressOut} />
+        <RecordButton
+          uiState={uiState}
+          onPressIn={handlePressIn}
+          onPressOut={handlePressOut}
+          onTapInterrupt={handleInterruptTTS}
+        />
       </View>
     </SafeAreaView>
   );

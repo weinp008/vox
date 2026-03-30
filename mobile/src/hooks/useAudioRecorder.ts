@@ -1,9 +1,12 @@
 import { useState, useRef } from 'react';
 import { Audio } from 'expo-av';
 
+const MIN_RECORDING_MS = 500; // Recordings shorter than this are treated as accidental
+
 export function useAudioRecorder() {
   const [isRecording, setIsRecording] = useState(false);
   const recordingRef = useRef<Audio.Recording | null>(null);
+  const startTimeRef = useRef<number>(0);
 
   async function startRecording() {
     const { granted } = await Audio.requestPermissionsAsync();
@@ -18,17 +21,19 @@ export function useAudioRecorder() {
       Audio.RecordingOptionsPresets.HIGH_QUALITY,
     );
     recordingRef.current = recording;
+    startTimeRef.current = Date.now();
     setIsRecording(true);
   }
 
-  async function stopRecording(): Promise<string> {
+  /** Stop recording and return the URI, or null if it was too short (cancelled). */
+  async function stopRecording(): Promise<string | null> {
     const recording = recordingRef.current;
     if (!recording) throw new Error('No active recording');
 
+    const duration = Date.now() - startTimeRef.current;
     setIsRecording(false);
     await recording.stopAndUnloadAsync();
 
-    // Switch back so playback routes through speaker, not earpiece
     await Audio.setAudioModeAsync({
       allowsRecordingIOS: false,
       playsInSilentModeIOS: true,
@@ -36,6 +41,11 @@ export function useAudioRecorder() {
 
     const uri = recording.getURI();
     recordingRef.current = null;
+
+    // Short press = accidental tap, cancel the recording
+    if (duration < MIN_RECORDING_MS) {
+      return null;
+    }
 
     if (!uri) throw new Error('Recording URI is null');
     return uri;

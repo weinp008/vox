@@ -6,23 +6,52 @@ interface Props {
   uiState: UIState;
   onPressIn: () => void;
   onPressOut: () => void;
+  onTapInterrupt: () => void;
 }
 
-export function RecordButton({ uiState, onPressIn, onPressOut }: Props) {
-  const disabled = uiState === 'processing' || uiState === 'listening';
+export function RecordButton({ uiState, onPressIn, onPressOut, onTapInterrupt }: Props) {
   const isRecording = uiState === 'recording';
+  const isListening = uiState === 'listening';
+  const isProcessing = uiState === 'processing';
+
+  function handlePressIn() {
+    if (isListening) {
+      onTapInterrupt();
+      return;
+    }
+    if (isProcessing) return;
+    onPressIn();
+  }
+
+  function handlePressOut() {
+    if (isListening || isProcessing) return;
+    onPressOut();
+  }
+
+  const label = isRecording
+    ? 'Release to send'
+    : isListening
+      ? 'Tap to stop'
+      : isProcessing
+        ? '...'
+        : 'Hold to speak';
 
   return (
     <Pressable
-      onPressIn={disabled ? undefined : onPressIn}
-      onPressOut={disabled ? undefined : onPressOut}
-      style={[styles.button, isRecording && styles.buttonRecording, disabled && styles.buttonDisabled]}
+      onPressIn={handlePressIn}
+      onPressOut={handlePressOut}
+      style={[
+        styles.button,
+        isRecording && styles.buttonRecording,
+        isListening && styles.buttonListening,
+        isProcessing && styles.buttonDisabled,
+      ]}
     >
       <View style={styles.inner}>
-        <Text style={styles.icon}>{isRecording ? '\u23F9' : '\uD83C\uDF99'}</Text>
-        <Text style={styles.label}>
-          {isRecording ? 'Release to send' : disabled ? '...' : 'Hold to speak'}
+        <Text style={styles.icon}>
+          {isRecording ? '\u23F9' : isListening ? '\u23F8' : '\uD83C\uDF99'}
         </Text>
+        <Text style={styles.label}>{label}</Text>
       </View>
     </Pressable>
   );
@@ -42,6 +71,10 @@ const styles = StyleSheet.create({
   buttonRecording: {
     backgroundColor: '#3d0f0f',
     borderColor: '#ff4444',
+  },
+  buttonListening: {
+    backgroundColor: '#0a2a3d',
+    borderColor: '#00d4ff',
   },
   buttonDisabled: {
     borderColor: '#334',
