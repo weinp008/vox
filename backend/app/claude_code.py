@@ -51,6 +51,7 @@ def run_claude_code(
         "claude",
         "-p", prompt,
         "--output-format", "stream-json",
+        "--verbose",
         "--model", s.model,
         "--effort", s.effort,
         "--permission-mode", "default",

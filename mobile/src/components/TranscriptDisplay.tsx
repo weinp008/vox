@@ -65,7 +65,17 @@ export function TranscriptDisplay({
   onReadAloud, onAskClaude, onToggleCompact,
 }: Props) {
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const scrollRef = useRef<ScrollView>(null);
+
+  function toggleExpand(entryId: string) {
+    setExpandedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(entryId)) next.delete(entryId);
+      else next.add(entryId);
+      return next;
+    });
+  }
 
   useEffect(() => {
     setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100);
@@ -116,16 +126,20 @@ export function TranscriptDisplay({
 
       {conversation.map((entry, i) => {
         const isLast = i === conversation.length - 1;
-        const showFull = isLast || !isCompact;
+        const isExpanded = expandedIds.has(entry.id);
+        const showFull = isLast || !isCompact || isExpanded;
         const isBeingRead = readingEntryId === entry.id;
 
         return (
           <View key={entry.id} style={[styles.entry, !isLast && isCompact && styles.entryCompact]}>
-            <View style={styles.userBubble}>
+            <Pressable
+              style={styles.userBubble}
+              onPress={!showFull ? () => toggleExpand(entry.id) : undefined}
+            >
               <Text style={styles.userText}>
                 {showFull ? entry.userText : summarize(entry.userText)}
               </Text>
-            </View>
+            </Pressable>
 
             {entry.response ? (
               <View style={[styles.responseBubble, isBeingRead && styles.responseBubbleReading]}>
@@ -161,9 +175,12 @@ export function TranscriptDisplay({
                     )}
                   </>
                 ) : (
-                  <Text style={styles.responseTextCompact}>
-                    {summarize(entry.response.response_text)}
-                  </Text>
+                  <Pressable onPress={() => toggleExpand(entry.id)}>
+                    <Text style={styles.responseTextCompact}>
+                      {summarize(entry.response.response_text)}
+                    </Text>
+                    <Text style={styles.expandHint}>Tap to expand</Text>
+                  </Pressable>
                 )}
               </View>
             ) : (
@@ -213,6 +230,7 @@ const styles = StyleSheet.create({
   },
   responseText: { color: '#eef', fontSize: 14, lineHeight: 20 },
   responseTextCompact: { color: '#889', fontSize: 13 },
+  expandHint: { color: '#445', fontSize: 10, marginTop: 4 },
   paragraphGap: { marginTop: 10 },
   highlightedWord: {
     backgroundColor: '#00d4ff33',
