@@ -1,0 +1,20 @@
+{
+  "expo": {
+    "name": "Sonar",
+    "slug": "sonar",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "splash": { "backgroundColor": "#060d1a" },
+    "ios": {
+      "bundleIdentifier": "com.sonar.app",
+      "infoPlist": {
+        "NSMicrophoneUsageDescription": "Sonar needs your microphone to record voice commands."
+      }
+    },
+    "android": {
+      "package": "com.sonar.app",
+      "permissions": ["RECORD_AUDIO"]
+    }
+  }
+}
