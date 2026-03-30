@@ -16,6 +16,7 @@ interface Props {
   conversation: ConversationEntry[];
   isCompact: boolean;
   onReadAloud: (text: string) => void;
+  onAskClaude: (text: string) => void;
   onToggleCompact: () => void;
 }
 
@@ -23,18 +24,16 @@ function splitIntoParagraphs(text: string): string[] {
   return text.split(/\n{2,}/).map((p) => p.trim()).filter((p) => p.length > 0);
 }
 
-/** Truncate to first sentence for compact mode. */
 function summarize(text: string): string {
   const first = text.split(/[.!?\n]/)[0]?.trim();
   if (!first) return text.slice(0, 60);
   return first.length > 80 ? first.slice(0, 77) + '...' : first;
 }
 
-export function TranscriptDisplay({ conversation, isCompact, onReadAloud, onToggleCompact }: Props) {
+export function TranscriptDisplay({ conversation, isCompact, onReadAloud, onAskClaude, onToggleCompact }: Props) {
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const scrollRef = useRef<ScrollView>(null);
 
-  // Auto-scroll to bottom on new messages
   useEffect(() => {
     setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100);
   }, [conversation.length, conversation[conversation.length - 1]?.response]);
@@ -43,13 +42,14 @@ export function TranscriptDisplay({ conversation, isCompact, onReadAloud, onTogg
     if (Platform.OS === 'ios') {
       ActionSheetIOS.showActionSheetWithOptions(
         {
-          options: ['Read from here', 'Copy this section', 'Copy all', 'Cancel'],
-          cancelButtonIndex: 3,
+          options: ['Read from here', 'Ask Claude about this', 'Copy section', 'Copy all', 'Cancel'],
+          cancelButtonIndex: 4,
         },
         (index) => {
           if (index === 0) onReadAloud(textFromHere);
-          if (index === 1) copyText(textFromHere, id);
-          if (index === 2) copyText(fullText, id);
+          if (index === 1) onAskClaude(textFromHere);
+          if (index === 2) copyText(textFromHere, id);
+          if (index === 3) copyText(fullText, id);
         },
       );
     } else {
@@ -73,7 +73,6 @@ export function TranscriptDisplay({ conversation, isCompact, onReadAloud, onTogg
 
   return (
     <ScrollView ref={scrollRef} style={styles.container} contentContainerStyle={styles.content}>
-      {/* Compact toggle */}
       {conversation.length > 2 && (
         <TouchableOpacity onPress={onToggleCompact} style={styles.compactToggle}>
           <Text style={styles.compactToggleText}>
@@ -88,44 +87,37 @@ export function TranscriptDisplay({ conversation, isCompact, onReadAloud, onTogg
 
         return (
           <View key={entry.id} style={[styles.entry, !isLast && isCompact && styles.entryCompact]}>
-            {/* User message */}
             <View style={styles.userBubble}>
               <Text style={styles.userText}>
                 {showFull ? entry.userText : summarize(entry.userText)}
               </Text>
             </View>
 
-            {/* Sonar response */}
             {entry.response ? (
               <View style={styles.responseBubble}>
                 {showFull ? (
-                  // Full view — paragraphs with long-press
-                  <>
-                    {splitIntoParagraphs(entry.response.response_text).map((para, pi) => {
-                      const textFromHere = splitIntoParagraphs(entry.response!.response_text).slice(pi).join('\n\n');
-                      return (
-                        <TouchableOpacity
-                          key={pi}
-                          activeOpacity={0.7}
-                          onLongPress={() => handleLongPress(textFromHere, entry.response!.response_text, `${entry.id}-${pi}`)}
-                          delayLongPress={400}
-                        >
-                          <Text style={[styles.responseText, pi > 0 && styles.paragraphGap]} selectable>
-                            {para}
-                          </Text>
-                        </TouchableOpacity>
-                      );
-                    })}
-                  </>
+                  splitIntoParagraphs(entry.response.response_text).map((para, pi) => {
+                    const textFromHere = splitIntoParagraphs(entry.response!.response_text).slice(pi).join('\n\n');
+                    return (
+                      <TouchableOpacity
+                        key={pi}
+                        activeOpacity={0.7}
+                        onLongPress={() => handleLongPress(textFromHere, entry.response!.response_text, `${entry.id}-${pi}`)}
+                        delayLongPress={400}
+                      >
+                        <Text style={[styles.responseText, pi > 0 && styles.paragraphGap]}>
+                          {para}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })
                 ) : (
-                  // Compact view — one-line summary
                   <Text style={styles.responseTextCompact}>
                     {summarize(entry.response.response_text)}
                   </Text>
                 )}
               </View>
             ) : (
-              // Still waiting for response
               <View style={styles.thinkingBubble}>
                 <ActivityIndicator size="small" color="#00d4ff" />
                 <Text style={styles.thinkingText}>Thinking...</Text>

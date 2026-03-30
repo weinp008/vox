@@ -38,6 +38,27 @@ export function VoiceScreen({ onLeaveSession }: Props) {
     if (!didReplay) setUIState('idle');
   }
 
+  /** "Ask Claude about this" — sends selected text as a follow-up prompt */
+  async function handleAskClaude(text: string) {
+    if (uiState !== 'idle') return;
+    try {
+      const entryId = addUserMessage(`[Re: "${text.slice(0, 50)}${text.length > 50 ? '...' : ''}"] Tell me more about this.`);
+      setUIState('processing');
+      const currentState = lastResponse?.state ?? 'idle';
+      const response = await sendText(sessionId!, `Explain this in more detail: ${text}`, currentState, ttsEnabled);
+      setEntryResponse(entryId, response);
+      if (ttsEnabled && response.audio_url) {
+        setUIState('listening');
+        await playAudio(response.audio_url);
+      } else {
+        setUIState('idle');
+      }
+    } catch (e: any) {
+      setUIState('idle');
+      Alert.alert('Error', e.message ?? 'Something went wrong');
+    }
+  }
+
   async function handleReadAloud(text: string) {
     if (uiState !== 'idle') return;
     try {
@@ -90,6 +111,30 @@ export function VoiceScreen({ onLeaveSession }: Props) {
     }
   }
 
+  /** Tap an option or "Select all" to send selection directly */
+  async function handleOptionSelect(selection: string) {
+    if (uiState !== 'idle') return;
+    try {
+      const label = selection === 'all' ? 'All options' : `Option ${selection}`;
+      const entryId = addUserMessage(label);
+      setUIState('processing');
+      const text = selection === 'all'
+        ? 'User selected all options. Proceed with all of them.'
+        : `User selected option ${selection}.`;
+      const response = await sendText(sessionId!, text, 'awaiting_response', ttsEnabled);
+      setEntryResponse(entryId, response);
+      if (ttsEnabled && response.audio_url) {
+        setUIState('listening');
+        await playAudio(response.audio_url);
+      } else {
+        setUIState('idle');
+      }
+    } catch (e: any) {
+      setUIState('idle');
+      Alert.alert('Error', e.message ?? 'Something went wrong');
+    }
+  }
+
   function handleLeave() {
     clearSession();
     onLeaveSession();
@@ -115,11 +160,18 @@ export function VoiceScreen({ onLeaveSession }: Props) {
       </View>
 
       <View style={styles.body}>
-        {showOptions && <OptionsDisplay options={lastResponse!.options!} />}
+        {showOptions && (
+          <OptionsDisplay
+            options={lastResponse!.options!}
+            onSelect={(n) => handleOptionSelect(n)}
+            onSelectAll={() => handleOptionSelect('all')}
+          />
+        )}
         <TranscriptDisplay
           conversation={conversation}
           isCompact={isCompact}
           onReadAloud={handleReadAloud}
+          onAskClaude={handleAskClaude}
           onToggleCompact={toggleCompact}
         />
       </View>

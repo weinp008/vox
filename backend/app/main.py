@@ -198,8 +198,13 @@ async def _process_respond(session, transcript: str, tts: bool = True) -> Prompt
         response_type = ResponseType.FREEFORM
 
     elif command == CommandType.NUMERIC and extra:
-        # Pass the selection to Claude as context
-        selection_text = f"User selected option {extra}: {transcript}"
+        # Handle multi-select and "all"
+        if extra == "all":
+            selection_text = f"User selected all options. Proceed with all of them."
+        elif "," in extra:
+            selection_text = f"User selected options {extra.replace(',', ', ')}. Proceed with those."
+        else:
+            selection_text = f"User selected option {extra}."
         response_text, response_type, options, diff = await get_claude_response(session, selection_text)
         if diff:
             session.pending_diff = diff

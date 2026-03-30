@@ -49,12 +49,24 @@ async def get_claude_response(session: Session, user_text: str) -> tuple[str, Re
 
     session.add_user_message(user_text)
 
+    # Send last 20 messages to Claude; summarize older ones in system prompt
+    messages = session.conversation
+    MAX_MESSAGES = 20
+    if len(messages) > MAX_MESSAGES:
+        older = messages[:-MAX_MESSAGES]
+        # Summarize older context as a system-level note
+        older_summary = " | ".join(
+            m["content"][:80] for m in older if m["role"] == "user"
+        )
+        system += f"\n\nPrior conversation topics: {older_summary}"
+        messages = messages[-MAX_MESSAGES:]
+
     client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
     message = await client.messages.create(
         model="claude-sonnet-4-20250514",
         max_tokens=512,
         system=system,
-        messages=session.conversation,
+        messages=messages,
     )
 
     response_text = message.content[0].text
