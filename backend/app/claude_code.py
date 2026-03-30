@@ -43,7 +43,7 @@ def run_claude_code(
     session_id: str | None = None,
     settings: ClaudeCodeSettings | None = None,
     sonar_session_id: str | None = None,
-) -> tuple[str, str | None]:
+) -> tuple[str, str | None, int]:
     """Run a prompt through Claude Code CLI with live activity tracking."""
     s = settings or current_settings
     sid = sonar_session_id or "unknown"
@@ -73,6 +73,7 @@ def run_claude_code(
 
     result_text = ""
     cc_session_id = session_id
+    input_tokens = 0
 
     try:
         for line in proc.stdout:
@@ -110,6 +111,8 @@ def run_claude_code(
                     result_text = event.get("result", "")
                     cc_session_id = event.get("session_id", session_id)
                     duration = event.get("duration_ms", 0)
+                    usage = event.get("usage", {})
+                    input_tokens = usage.get("input_tokens", 0)
                     _add_activity(sid, f"Done ({duration / 1000:.1f}s)")
 
             except json.JSONDecodeError:
@@ -120,14 +123,25 @@ def run_claude_code(
     except subprocess.TimeoutExpired:
         proc.kill()
         _add_activity(sid, "Timed out")
-        return "Claude Code timed out.", cc_session_id
+        return "Claude Code timed out.", cc_session_id, input_tokens
 
     if proc.returncode != 0 and not result_text:
         stderr = proc.stderr.read() if proc.stderr else ""
         _add_activity(sid, f"Error: {(stderr.strip() or 'unknown')[:80]}")
-        return stderr.strip() or "Claude Code error", cc_session_id
+        return stderr.strip() or "Claude Code error", cc_session_id, input_tokens
 
-    return result_text, cc_session_id
+    return result_text, cc_session_id, input_tokens
+
+
+def run_compact(cwd: str, cc_session_id: str) -> tuple[str, str | None]:
+    """Run /compact on the current Claude Code session to summarize context."""
+    text, new_sid, _ = run_claude_code(
+        "/compact",
+        cwd,
+        session_id=cc_session_id,
+        sonar_session_id="compact",
+    )
+    return text, new_sid
 
 
 def git_stash_pop(cwd: str) -> bool:
@@ -154,7 +168,7 @@ async def get_claude_code_response(
     import asyncio
 
     loop = asyncio.get_event_loop()
-    response_text, new_cc_session = await loop.run_in_executor(
+    response_text, new_cc_session, input_tokens = await loop.run_in_executor(
         None,
         run_claude_code,
         user_text,
@@ -165,6 +179,8 @@ async def get_claude_code_response(
     )
 
     session.claude_code_session_id = new_cc_session
+    if input_tokens:
+        session.context_tokens = input_tokens
     session.add_user_message(user_text)
     session.add_assistant_message(response_text)
 

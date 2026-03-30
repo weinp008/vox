@@ -161,6 +161,53 @@ async def update_settings(req: UpdateSettingsRequest):
     )
 
 
+@app.post("/session/{session_id}/compact")
+async def compact_session(session_id: str):
+    """Run /compact on the Claude Code session to summarize and reduce context."""
+    import asyncio
+    from app.claude_code import run_compact
+    session = get_session(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    if not session.claude_code_session_id:
+        return {"ok": False, "message": "No active Claude Code session to compact"}
+
+    loop = asyncio.get_event_loop()
+    result_text, new_cc_session = await loop.run_in_executor(
+        None, run_compact, session.project_path, session.claude_code_session_id
+    )
+    if new_cc_session:
+        session.claude_code_session_id = new_cc_session
+    session.context_tokens = 0  # Reset — we don't know new size until next turn
+    session._save()
+    return {"ok": True, "message": result_text[:200]}
+
+
+@app.post("/session/{session_id}/clear")
+async def clear_context(session_id: str):
+    """Clear the Claude Code session context (start fresh)."""
+    session = get_session(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    session.claude_code_session_id = None
+    session.context_tokens = 0
+    session._save()
+    return {"ok": True}
+
+
+@app.get("/projects")
+async def list_projects():
+    """List available project directories in PROJECTS_DIR."""
+    base = settings.projects_dir
+    if not os.path.isdir(base):
+        return {"projects": []}
+    projects = sorted(
+        d for d in os.listdir(base)
+        if os.path.isdir(os.path.join(base, d)) and not d.startswith(".")
+    )
+    return {"projects": projects}
+
+
 @app.get("/session/{session_id}/activity")
 async def session_activity(session_id: str):
     """Get live activity log for a session (poll during processing)."""
@@ -317,6 +364,7 @@ async def _process_prompt(session, text: str, tts: bool = True) -> PromptRespons
         audio_url=audio_b64,
         state=session.state,
         timing=timing,
+        context_tokens=session.context_tokens,
     )
 
 
@@ -385,6 +433,29 @@ async def _process_respond(session, transcript: str, tts: bool = True) -> Prompt
         session.pending_diff = None
         session.state = SessionState.IDLE
         response_text = "Cancelled. What would you like to do next?"
+        response_type = ResponseType.FREEFORM
+
+    elif command == CommandType.UNDO:
+        import subprocess as _sp
+        try:
+            result = _sp.run(
+                ["git", "revert", "HEAD", "--no-edit"],
+                cwd=session.project_path,
+                capture_output=True, text=True, timeout=15,
+            )
+            if result.returncode == 0:
+                response_text = "Reverted last commit. Working directory is clean."
+            else:
+                # Fallback: try unstaged reset
+                result2 = _sp.run(
+                    ["git", "checkout", "--", "."],
+                    cwd=session.project_path,
+                    capture_output=True, text=True, timeout=10,
+                )
+                response_text = "Discarded uncommitted changes." if result2.returncode == 0 else f"Undo failed: {result.stderr.strip()[:100]}"
+        except Exception as e:
+            response_text = f"Undo failed: {str(e)[:80]}"
+        session.state = SessionState.IDLE
         response_type = ResponseType.FREEFORM
 
     elif command == CommandType.SEND:

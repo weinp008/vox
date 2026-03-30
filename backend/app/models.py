@@ -28,6 +28,7 @@ class CommandType(str, Enum):
     SEND = "send"
     ABORT = "abort"
     READ_BACK = "read_back"
+    UNDO = "undo"
     FREEFORM = "freeform"
 
 
@@ -52,6 +53,7 @@ class PromptResponse(BaseModel):
     audio_url: Optional[str] = None
     state: SessionState
     timing: Optional[Dict[str, float]] = None  # e.g. {"claude": 12.3, "tts": 1.5}
+    context_tokens: int = 0
 
 
 class RespondRequest(BaseModel):
