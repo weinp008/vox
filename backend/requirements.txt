@@ -3,7 +3,7 @@ uvicorn[standard]==0.34.0
 python-multipart==0.0.20
 deepgram-sdk==3.8.0
 anthropic==0.42.0
-elevenlabs==1.16.0
+elevenlabs>=2.0.0
 pydantic==2.10.4
 pydantic-settings==2.7.1
 python-dotenv==1.0.1

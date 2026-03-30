@@ -1,6 +1,6 @@
-from __future__ import annotations
-
 from enum import Enum
+from typing import List, Optional
+
 from pydantic import BaseModel
 
 
@@ -32,8 +32,8 @@ class StartSessionRequest(BaseModel):
 class StartSessionResponse(BaseModel):
     session_id: str
     project_name: str
-    files: list[str]
-    recent_commits: list[str]
+    files: List[str]
+    recent_commits: List[str]
 
 
 class PromptResponse(BaseModel):
@@ -41,9 +41,9 @@ class PromptResponse(BaseModel):
     transcript: str
     response_text: str
     response_type: ResponseType
-    options: list[str] | None = None
-    pending_diff: str | None = None
-    audio_url: str | None = None
+    options: Optional[List[str]] = None
+    pending_diff: Optional[str] = None
+    audio_url: Optional[str] = None
     state: SessionState
 
 
