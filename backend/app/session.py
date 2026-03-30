@@ -21,6 +21,7 @@ class Session:
         self.pending_diff: str | None = None
         self.files: list[str] = []
         self.recent_commits: list[str] = []
+        self.claude_code_session_id: str | None = None
         self.created_at: float = time.time()
         self.updated_at: float = time.time()
         self._load_project_context()
@@ -72,6 +73,7 @@ class Session:
             "state": self.state.value,
             "conversation": self.conversation,
             "pending_diff": self.pending_diff,
+            "claude_code_session_id": self.claude_code_session_id,
             "created_at": self.created_at,
             "updated_at": self.updated_at,
         }
@@ -93,6 +95,7 @@ class Session:
         session.state = SessionState(data["state"])
         session.conversation = data["conversation"]
         session.pending_diff = data.get("pending_diff")
+        session.claude_code_session_id = data.get("claude_code_session_id")
         session.created_at = data.get("created_at", 0)
         session.updated_at = data.get("updated_at", 0)
         session.files = []

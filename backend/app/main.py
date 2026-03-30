@@ -9,6 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.commands import detect_command
 from app.config import settings
+from app.claude_code import get_claude_code_response
 from app.llm import get_claude_response
 from app.models import (
     CommandType,
@@ -140,9 +141,16 @@ async def prompt(
     return await _process_prompt(session, transcript)
 
 
+async def _get_response(session, text: str):
+    """Route to Claude Code CLI or direct API based on config."""
+    if settings.use_claude_code:
+        return await get_claude_code_response(session, text)
+    return await get_claude_response(session, text)
+
+
 async def _process_prompt(session, text: str, tts: bool = True) -> PromptResponse:
     """Shared logic: send text to Claude, generate TTS, return response."""
-    response_text, response_type, options, diff = await get_claude_response(session, text)
+    response_text, response_type, options, diff = await _get_response(session, text)
 
     if diff:
         session.pending_diff = diff
@@ -243,7 +251,7 @@ async def _process_respond(session, transcript: str, tts: bool = True) -> Prompt
             selection_text = f"User selected options {extra.replace(',', ', ')}. Proceed with those."
         else:
             selection_text = f"User selected option {extra}."
-        response_text, response_type, options, diff = await get_claude_response(session, selection_text)
+        response_text, response_type, options, diff = await _get_response(session, selection_text)
         if diff:
             session.pending_diff = diff
             session.state = SessionState.AWAITING_RESPONSE
@@ -251,7 +259,7 @@ async def _process_respond(session, transcript: str, tts: bool = True) -> Prompt
 
     else:
         # DISCUSS or FREEFORM — pass through to Claude
-        response_text, response_type, options, diff = await get_claude_response(session, transcript)
+        response_text, response_type, options, diff = await _get_response(session, transcript)
         if diff:
             session.pending_diff = diff
             session.state = SessionState.AWAITING_RESPONSE
