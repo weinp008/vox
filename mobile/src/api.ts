@@ -43,13 +43,14 @@ export async function sendText(
   sessionId: string,
   text: string,
   sessionState: SessionState,
+  tts: boolean = true,
 ): Promise<PromptResponse> {
   const endpoint = sessionState === 'awaiting_response' ? '/respond/text' : '/prompt/text';
 
   const res = await fetch(`${BASE_URL}${endpoint}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ session_id: sessionId, text }),
+    body: JSON.stringify({ session_id: sessionId, text, tts }),
   });
 
   if (!res.ok) {

@@ -8,13 +8,13 @@ interface SessionContextValue {
   lastResponse: PromptResponse | null;
   uiState: UIState;
   isCompact: boolean;
+  ttsEnabled: boolean;
   setSession: (id: string, name: string) => void;
-  /** Add a new entry with the user's transcript (response pending). */
   addUserMessage: (text: string) => string;
-  /** Attach the Claude response to an existing entry. */
   setEntryResponse: (entryId: string, response: PromptResponse) => void;
   setUIState: (s: UIState) => void;
   toggleCompact: () => void;
+  toggleTTS: () => void;
   clearSession: () => void;
 }
 
@@ -29,6 +29,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const [lastResponse, setLastResponse] = useState<PromptResponse | null>(null);
   const [uiState, setUIState] = useState<UIState>('idle');
   const [isCompact, setIsCompact] = useState(false);
+  const [ttsEnabled, setTtsEnabled] = useState(true);
 
   function setSession(id: string, name: string) {
     setSessionId(id);
@@ -50,9 +51,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     setLastResponse(response);
   }
 
-  function toggleCompact() {
-    setIsCompact((prev) => !prev);
-  }
+  function toggleCompact() { setIsCompact((p) => !p); }
+  function toggleTTS() { setTtsEnabled((p) => !p); }
 
   function clearSession() {
     setSessionId(null);
@@ -66,8 +66,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   return (
     <SessionContext.Provider
       value={{
-        sessionId, projectName, conversation, lastResponse, uiState, isCompact,
-        setSession, addUserMessage, setEntryResponse, setUIState, toggleCompact, clearSession,
+        sessionId, projectName, conversation, lastResponse, uiState, isCompact, ttsEnabled,
+        setSession, addUserMessage, setEntryResponse, setUIState, toggleCompact, toggleTTS, clearSession,
       }}
     >
       {children}

@@ -70,6 +70,7 @@ async def transcribe(
 class TextPromptRequest(BaseModel):
     session_id: str
     text: str
+    tts: bool = True
 
 
 @app.post("/prompt/text", response_model=PromptResponse)
@@ -79,7 +80,7 @@ async def prompt_text(req: TextPromptRequest):
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
 
-    return await _process_prompt(session, req.text)
+    return await _process_prompt(session, req.text, tts=req.tts)
 
 
 @app.post("/prompt", response_model=PromptResponse)
@@ -101,7 +102,7 @@ async def prompt(
     return await _process_prompt(session, transcript)
 
 
-async def _process_prompt(session, text: str) -> PromptResponse:
+async def _process_prompt(session, text: str, tts: bool = True) -> PromptResponse:
     """Shared logic: send text to Claude, generate TTS, return response."""
     response_text, response_type, options, diff = await get_claude_response(session, text)
 
@@ -114,11 +115,12 @@ async def _process_prompt(session, text: str) -> PromptResponse:
         session.state = SessionState.IDLE
 
     audio_b64 = None
-    try:
-        tts_bytes = await generate_speech(response_text)
-        audio_b64 = base64.b64encode(tts_bytes).decode()
-    except Exception:
-        import traceback; traceback.print_exc()
+    if tts:
+        try:
+            tts_bytes = await generate_speech(response_text)
+            audio_b64 = base64.b64encode(tts_bytes).decode()
+        except Exception:
+            import traceback; traceback.print_exc()
 
     return PromptResponse(
         session_id=session.id,
@@ -135,6 +137,7 @@ async def _process_prompt(session, text: str) -> PromptResponse:
 class TextRespondRequest(BaseModel):
     session_id: str
     text: str
+    tts: bool = True
 
 
 @app.post("/respond/text", response_model=PromptResponse)
@@ -143,7 +146,7 @@ async def respond_text(req: TextRespondRequest):
     session = get_session(req.session_id)
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
-    return await _process_respond(session, req.text)
+    return await _process_respond(session, req.text, tts=req.tts)
 
 
 @app.post("/respond", response_model=PromptResponse)
@@ -164,7 +167,7 @@ async def respond(
     return await _process_respond(session, transcript)
 
 
-async def _process_respond(session, transcript: str) -> PromptResponse:
+async def _process_respond(session, transcript: str, tts: bool = True) -> PromptResponse:
 
     # 2. Detect command
     command, extra = detect_command(transcript)
@@ -201,7 +204,7 @@ async def _process_respond(session, transcript: str) -> PromptResponse:
         if diff:
             session.pending_diff = diff
             session.state = SessionState.AWAITING_RESPONSE
-        return await _build_response(session, transcript, response_text, response_type, options, diff)
+        return await _build_response(session, transcript, response_text, response_type, options, diff, tts)
 
     else:
         # DISCUSS or FREEFORM — pass through to Claude
@@ -209,15 +212,16 @@ async def _process_respond(session, transcript: str) -> PromptResponse:
         if diff:
             session.pending_diff = diff
             session.state = SessionState.AWAITING_RESPONSE
-        return await _build_response(session, transcript, response_text, response_type, options, diff)
+        return await _build_response(session, transcript, response_text, response_type, options, diff, tts)
 
     # Generate TTS for handled commands
     audio_b64 = None
-    try:
-        tts_bytes = await generate_speech(response_text)
-        audio_b64 = base64.b64encode(tts_bytes).decode()
-    except Exception:
-        pass
+    if tts:
+        try:
+            tts_bytes = await generate_speech(response_text)
+            audio_b64 = base64.b64encode(tts_bytes).decode()
+        except Exception:
+            pass
 
     return PromptResponse(
         session_id=session.id,
@@ -259,13 +263,15 @@ async def _build_response(
     response_type: ResponseType,
     options: list[str] | None,
     diff: str | None,
+    tts: bool = True,
 ) -> PromptResponse:
     audio_b64 = None
-    try:
-        tts_bytes = await generate_speech(response_text)
-        audio_b64 = base64.b64encode(tts_bytes).decode()
-    except Exception:
-        pass
+    if tts:
+        try:
+            tts_bytes = await generate_speech(response_text)
+            audio_b64 = base64.b64encode(tts_bytes).decode()
+        except Exception:
+            pass
 
     return PromptResponse(
         session_id=session.id,

@@ -15,8 +15,8 @@ interface Props {
 
 export function VoiceScreen({ onLeaveSession }: Props) {
   const {
-    sessionId, projectName, conversation, lastResponse, uiState, isCompact,
-    addUserMessage, setEntryResponse, setUIState, toggleCompact, clearSession,
+    sessionId, projectName, conversation, lastResponse, uiState, isCompact, ttsEnabled,
+    addUserMessage, setEntryResponse, setUIState, toggleCompact, toggleTTS, clearSession,
   } = useSession();
 
   const handlePlaybackFinished = useCallback(() => {
@@ -32,6 +32,7 @@ export function VoiceScreen({ onLeaveSession }: Props) {
   }
 
   async function handleDoubleTapReplay() {
+    if (!ttsEnabled) return;
     setUIState('listening');
     const didReplay = await replayAudio();
     if (!didReplay) setUIState('idle');
@@ -65,23 +66,19 @@ export function VoiceScreen({ onLeaveSession }: Props) {
       const uri = await stopRecording();
       if (!uri) { setUIState('idle'); return; }
 
-      // Step 1: Transcribe — show text immediately
+      // Step 1: Transcribe
       setUIState('transcribing');
       const transcript = await transcribeAudio(uri);
-
-      // Show user's message right away with "Thinking..." placeholder
       const entryId = addUserMessage(transcript);
 
-      // Step 2: Send to Claude
+      // Step 2: Send to Claude (with TTS toggle)
       setUIState('processing');
       const currentState = lastResponse?.state ?? 'idle';
-      const response = await sendText(sessionId!, transcript, currentState);
-
-      // Attach response to the conversation entry
+      const response = await sendText(sessionId!, transcript, currentState, ttsEnabled);
       setEntryResponse(entryId, response);
 
-      // Step 3: Play TTS
-      if (response.audio_url) {
+      // Step 3: Play TTS if enabled and available
+      if (ttsEnabled && response.audio_url) {
         setUIState('listening');
         await playAudio(response.audio_url);
       } else {
@@ -98,7 +95,6 @@ export function VoiceScreen({ onLeaveSession }: Props) {
     onLeaveSession();
   }
 
-  // Show options from the latest response that has them
   const showOptions =
     lastResponse?.response_type === 'options' && lastResponse.options && lastResponse.options.length > 0;
 
@@ -111,7 +107,11 @@ export function VoiceScreen({ onLeaveSession }: Props) {
         <Text style={styles.projectName} numberOfLines={1}>
           {projectName}
         </Text>
-        <View style={{ width: 60 }} />
+        <TouchableOpacity onPress={toggleTTS} style={styles.ttsToggle}>
+          <Text style={[styles.ttsText, !ttsEnabled && styles.ttsOff]}>
+            {ttsEnabled ? 'TTS ON' : 'TTS OFF'}
+          </Text>
+        </TouchableOpacity>
       </View>
 
       <View style={styles.body}>
@@ -152,6 +152,12 @@ const styles = StyleSheet.create({
   backBtn: { width: 60 },
   backText: { color: '#00d4ff', fontSize: 14 },
   projectName: { color: '#eef', fontWeight: '600', fontSize: 16, flex: 1, textAlign: 'center' },
+  ttsToggle: {
+    width: 60,
+    alignItems: 'flex-end',
+  },
+  ttsText: { color: '#00d4ff', fontSize: 11, fontWeight: '600' },
+  ttsOff: { color: '#556' },
   body: { flex: 1, paddingHorizontal: 16, paddingTop: 12 },
   controls: { alignItems: 'center', paddingBottom: 40, paddingTop: 20, gap: 16 },
 });
