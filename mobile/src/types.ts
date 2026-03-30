@@ -19,6 +19,7 @@ export interface PromptResponse {
   audio_url: string | null;
   state: SessionState;
   timing?: { claude: number; tts: number } | null;
+  context_tokens?: number;
 }
 
 /** A single exchange in the conversation history. */

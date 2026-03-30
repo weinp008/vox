@@ -4,6 +4,7 @@ import {
   FlatList,
   KeyboardAvoidingView,
   Platform,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -11,7 +12,7 @@ import {
   View,
   Alert,
 } from 'react-native';
-import { startSession, listSessions, resumeSession, SessionSummary } from '../api';
+import { startSession, listSessions, listProjects, resumeSession, SessionSummary } from '../api';
 import { useSession } from '../context/SessionContext';
 
 interface Props {
@@ -31,10 +32,12 @@ export function ProjectSelectScreen({ onSessionStarted }: Props) {
   const [path, setPath] = useState('');
   const [loading, setLoading] = useState(false);
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
+  const [projects, setProjects] = useState<string[]>([]);
   const [loadingSessions, setLoadingSessions] = useState(true);
 
   useEffect(() => {
     loadSessions();
+    listProjects().then(setProjects);
   }, []);
 
   async function loadSessions() {
@@ -79,73 +82,95 @@ export function ProjectSelectScreen({ onSessionStarted }: Props) {
 
   return (
     <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.container}>
-      <Text style={styles.title}>SONAR</Text>
-      <Text style={styles.subtitle}>Navigate code by voice</Text>
+      <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
+        <Text style={styles.title}>SONAR</Text>
+        <Text style={styles.subtitle}>Navigate code by voice</Text>
 
-      {/* Previous sessions */}
-      {sessions.length > 0 && (
-        <View style={styles.card}>
-          <Text style={styles.cardLabel}>Resume session</Text>
-          <FlatList
-            data={sessions}
-            keyExtractor={(item) => item.session_id}
-            style={styles.sessionList}
-            renderItem={({ item }) => (
+        {/* Previous sessions */}
+        {sessions.length > 0 && (
+          <View style={styles.card}>
+            <Text style={styles.cardLabel}>Resume session</Text>
+            <FlatList
+              data={sessions}
+              keyExtractor={(item) => item.session_id}
+              style={styles.sessionList}
+              scrollEnabled={false}
+              renderItem={({ item }) => (
+                <TouchableOpacity
+                  style={styles.sessionItem}
+                  onPress={() => handleResume(item.session_id)}
+                  disabled={loading}
+                >
+                  <View style={styles.sessionHeader}>
+                    <Text style={styles.sessionName}>
+                      {item.project_name}{item.branch ? ` · ${item.branch}` : ''}
+                    </Text>
+                    <Text style={styles.sessionTime}>{timeAgo(item.updated_at)}</Text>
+                  </View>
+                  <Text style={styles.sessionPreview} numberOfLines={1}>
+                    {item.last_message || `${item.message_count} messages`}
+                  </Text>
+                </TouchableOpacity>
+              )}
+            />
+          </View>
+        )}
+
+        {loadingSessions && sessions.length === 0 && (
+          <ActivityIndicator color="#00d4ff" style={{ marginBottom: 16 }} />
+        )}
+
+        {/* Available projects */}
+        {projects.length > 0 && (
+          <View style={styles.card}>
+            <Text style={styles.cardLabel}>Start new session</Text>
+            {projects.map((p) => (
               <TouchableOpacity
-                style={styles.sessionItem}
-                onPress={() => handleResume(item.session_id)}
+                key={p}
+                style={styles.projectItem}
+                onPress={() => handleNewSession(p)}
                 disabled={loading}
               >
-                <View style={styles.sessionHeader}>
-                  <Text style={styles.sessionName}>
-                    {item.project_name}{item.branch ? ` \u00B7 ${item.branch}` : ''}
-                  </Text>
-                  <Text style={styles.sessionTime}>{timeAgo(item.updated_at)}</Text>
-                </View>
-                <Text style={styles.sessionPreview} numberOfLines={1}>
-                  {item.last_message || `${item.message_count} messages`}
-                </Text>
+                <Text style={styles.projectIcon}>📁</Text>
+                <Text style={styles.projectName}>{p}</Text>
               </TouchableOpacity>
-            )}
+            ))}
+          </View>
+        )}
+
+        {/* Manual entry fallback */}
+        <View style={styles.card}>
+          <Text style={styles.cardLabel}>{projects.length > 0 ? 'Or enter path manually' : 'New session'}</Text>
+          <TextInput
+            style={styles.input}
+            placeholder="project folder name"
+            placeholderTextColor="#445"
+            value={path}
+            onChangeText={setPath}
+            autoCapitalize="none"
+            autoCorrect={false}
+            onSubmitEditing={() => handleNewSession(path)}
           />
+          <TouchableOpacity
+            style={[styles.startBtn, !path.trim() && styles.startBtnDisabled]}
+            onPress={() => handleNewSession(path)}
+            disabled={loading || !path.trim()}
+          >
+            {loading ? (
+              <ActivityIndicator color="#000" />
+            ) : (
+              <Text style={styles.startBtnText}>Start</Text>
+            )}
+          </TouchableOpacity>
         </View>
-      )}
-
-      {loadingSessions && sessions.length === 0 && (
-        <ActivityIndicator color="#00d4ff" style={{ marginBottom: 16 }} />
-      )}
-
-      {/* New session */}
-      <View style={styles.card}>
-        <Text style={styles.cardLabel}>New session</Text>
-        <TextInput
-          style={styles.input}
-          placeholder="project folder name"
-          placeholderTextColor="#445"
-          value={path}
-          onChangeText={setPath}
-          autoCapitalize="none"
-          autoCorrect={false}
-          onSubmitEditing={() => handleNewSession(path)}
-        />
-        <TouchableOpacity
-          style={[styles.startBtn, !path.trim() && styles.startBtnDisabled]}
-          onPress={() => handleNewSession(path)}
-          disabled={loading || !path.trim()}
-        >
-          {loading ? (
-            <ActivityIndicator color="#000" />
-          ) : (
-            <Text style={styles.startBtnText}>Start</Text>
-          )}
-        </TouchableOpacity>
-      </View>
+      </ScrollView>
     </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#060d1a', justifyContent: 'center', padding: 24 },
+  container: { flex: 1, backgroundColor: '#060d1a' },
+  scroll: { padding: 24, justifyContent: 'center', flexGrow: 1 },
   title: { color: '#00d4ff', fontSize: 36, fontWeight: 'bold', textAlign: 'center', letterSpacing: 4 },
   subtitle: { color: '#556', textAlign: 'center', marginBottom: 32, marginTop: 8, fontSize: 14 },
   card: {
@@ -157,7 +182,7 @@ const styles = StyleSheet.create({
     borderColor: '#1a2744',
   },
   cardLabel: { color: '#556', fontSize: 11, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 12 },
-  sessionList: { maxHeight: 200 },
+  sessionList: { maxHeight: 220 },
   sessionItem: {
     paddingVertical: 10,
     paddingHorizontal: 12,
@@ -169,6 +194,18 @@ const styles = StyleSheet.create({
   sessionName: { color: '#aac', fontSize: 15, fontWeight: '600' },
   sessionTime: { color: '#445', fontSize: 11 },
   sessionPreview: { color: '#556', fontSize: 13 },
+  projectItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 11,
+    paddingHorizontal: 12,
+    backgroundColor: '#0a1528',
+    borderRadius: 8,
+    marginBottom: 8,
+  },
+  projectIcon: { fontSize: 16 },
+  projectName: { color: '#aac', fontSize: 15, fontWeight: '500' },
   input: {
     backgroundColor: '#060d1a',
     borderWidth: 1,

@@ -15,6 +15,7 @@ _SEND_PHRASES = ["send", "send it", "execute", "commit", "go ahead", "do it", "a
 _ABORT_PHRASES = ["cancel", "stop", "never mind", "nevermind", "abort"]
 _READ_BACK_PHRASES = ["read the changes", "what files", "show me the diff", "read it back", "what changed"]
 _DISCUSS_PHRASES = ["speak to discuss", "let me explain", "let me think"]
+_UNDO_PHRASES = ["undo", "undo that", "undo last", "revert", "revert that", "revert last", "go back"]
 
 MAX_COMMAND_WORDS = 8
 
@@ -36,6 +37,10 @@ def detect_command(transcript: str) -> tuple[CommandType, str | None]:
             return CommandType.DISCUSS, None
 
     if word_count <= MAX_COMMAND_WORDS:
+        for phrase in _UNDO_PHRASES:
+            if _word_match(phrase, text):
+                return CommandType.UNDO, None
+
         for phrase in _ABORT_PHRASES:
             if _word_match(phrase, text):
                 return CommandType.ABORT, None

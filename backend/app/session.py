@@ -19,6 +19,7 @@ class Session:
         self.state = SessionState.IDLE
         self.conversation: list[dict] = []
         self.pending_diff: str | None = None
+        self.context_tokens: int = 0
         self.files: list[str] = []
         self.recent_commits: list[str] = []
         self.claude_code_session_id: str | None = None
@@ -87,6 +88,7 @@ class Session:
             "state": self.state.value,
             "conversation": self.conversation,
             "pending_diff": self.pending_diff,
+            "context_tokens": self.context_tokens,
             "claude_code_session_id": self.claude_code_session_id,
             "current_branch": getattr(self, "current_branch", ""),
             "created_at": self.created_at,
@@ -110,6 +112,7 @@ class Session:
         session.state = SessionState(data["state"])
         session.conversation = data["conversation"]
         session.pending_diff = data.get("pending_diff")
+        session.context_tokens = data.get("context_tokens", 0)
         session.claude_code_session_id = data.get("claude_code_session_id")
         session.current_branch = data.get("current_branch", "")
         session.created_at = data.get("created_at", 0)

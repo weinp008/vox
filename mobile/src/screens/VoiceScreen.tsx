@@ -1,9 +1,12 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ActionSheetIOS, Alert, Platform, SafeAreaView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { transcribeAudio, sendText, requestTTS, updateSettings, getSettings, renameSession, getActivity } from '../api';
+
+import * as Clipboard from 'expo-clipboard';
+import * as ImagePicker from 'expo-image-picker';
+import { transcribeAudio, sendText, sendImage, requestTTS, updateSettings, getSettings, renameSession, getActivity, compactSession, clearContext } from '../api';
+import { DiffDisplay } from '../components/DiffDisplay';
 import { OptionsDisplay } from '../components/OptionsDisplay';
 import { RecordButton } from '../components/RecordButton';
-import { StatusIndicator } from '../components/StatusIndicator';
 import { TranscriptDisplay } from '../components/TranscriptDisplay';
 import { useSession } from '../context/SessionContext';
 import { useAudioPlayer } from '../hooks/useAudioPlayer';
@@ -30,6 +33,12 @@ export function VoiceScreen({ onLeaveSession }: Props) {
   const [currentModel, setCurrentModel] = useState('sonnet');
   const [planMode, setPlanMode] = useState(false);
   const [displayName, setDisplayName] = useState(projectName);
+  const [contextTokens, setContextTokens] = useState(0);
+
+  function handleResponse(entryId: string, response: import('../types').PromptResponse) {
+    handleResponse(entryId, response);
+    if (response.context_tokens) setContextTokens(response.context_tokens);
+  }
 
   const activityPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -68,6 +77,20 @@ export function VoiceScreen({ onLeaveSession }: Props) {
   const { playAudio, stopAudio, replayAudio, currentWordIndex } = useAudioPlayer(handlePlaybackFinished);
   const { startRecording, stopRecording } = useAudioRecorder();
 
+  async function speakError(message: string) {
+    setStatusDetail(message);
+    if (ttsEnabled) {
+      try {
+        const audio = await requestTTS(message);
+        setUIState('listening');
+        await playAudio(audio, message);
+      } catch {
+        // TTS failed — statusDetail still shows the error
+      }
+    }
+    setStatusDetail(undefined);
+  }
+
   function handleStopAudio() {
     stopAudio();
     setReadingEntryId(null);
@@ -90,7 +113,7 @@ export function VoiceScreen({ onLeaveSession }: Props) {
       setStatusDetail('Waiting for Claude...');
       const currentState = lastResponse?.state ?? 'idle';
       const response = await sendText(sessionId!, `Explain this in more detail: ${text}`, currentState, ttsEnabled);
-      setEntryResponse(entryId, response);
+      handleResponse(entryId, response);
       setStatusDetail(undefined);
       if (ttsEnabled && response.audio_url) {
         setUIState('listening');
@@ -101,7 +124,7 @@ export function VoiceScreen({ onLeaveSession }: Props) {
       }
     } catch (e: any) {
       setUIState('idle');
-      Alert.alert('Error', e.message ?? 'Something went wrong');
+      await speakError(e.message ?? 'Something went wrong');
     }
   }
 
@@ -133,7 +156,7 @@ export function VoiceScreen({ onLeaveSession }: Props) {
       setStatusDetail('Waiting for Claude...');
       const currentState = lastResponse?.state ?? 'idle';
       const response = await sendText(sessionId!, text, currentState, ttsEnabled);
-      setEntryResponse(entryId, response);
+      handleResponse(entryId, response);
       setStatusDetail(undefined);
       if (ttsEnabled && response.audio_url) {
         setUIState('listening');
@@ -144,7 +167,7 @@ export function VoiceScreen({ onLeaveSession }: Props) {
       }
     } catch (e: any) {
       setUIState('idle');
-      Alert.alert('Error', e.message ?? 'Something went wrong');
+      await speakError(e.message ?? 'Something went wrong');
     }
   }
 
@@ -165,7 +188,7 @@ export function VoiceScreen({ onLeaveSession }: Props) {
       await startRecording();
     } catch (e: any) {
       if (uiState === 'recording') setUIState('idle');
-      Alert.alert('Recording Error', e.message);
+      await speakError(e.message ?? 'Recording failed');
     }
   }
 
@@ -193,7 +216,7 @@ export function VoiceScreen({ onLeaveSession }: Props) {
       setStatusDetail('Waiting for Claude...');
       const currentState = lastResponse?.state ?? 'idle';
       const response = await sendText(sessionId!, transcript, currentState, ttsEnabled);
-      setEntryResponse(entryId, response);
+      handleResponse(entryId, response);
       setStatusDetail(undefined);
 
       if (ttsEnabled && response.audio_url) {
@@ -205,7 +228,7 @@ export function VoiceScreen({ onLeaveSession }: Props) {
       }
     } catch (e: any) {
       setUIState('idle');
-      Alert.alert('Error', e.message ?? 'Something went wrong');
+      await speakError(e.message ?? 'Something went wrong');
     }
   }
 
@@ -220,7 +243,7 @@ export function VoiceScreen({ onLeaveSession }: Props) {
         ? 'User selected all options. Proceed with all of them.'
         : `User selected option ${selection}.`;
       const response = await sendText(sessionId!, text, 'awaiting_response', ttsEnabled);
-      setEntryResponse(entryId, response);
+      handleResponse(entryId, response);
       setStatusDetail(undefined);
       if (ttsEnabled && response.audio_url) {
         setUIState('listening');
@@ -231,7 +254,7 @@ export function VoiceScreen({ onLeaveSession }: Props) {
       }
     } catch (e: any) {
       setUIState('idle');
-      Alert.alert('Error', e.message ?? 'Something went wrong');
+      await speakError(e.message ?? 'Something went wrong');
     }
   }
 
@@ -264,6 +287,108 @@ export function VoiceScreen({ onLeaveSession }: Props) {
     }
   }
 
+  function handleContextMenu() {
+    const pct = Math.round((contextTokens / 200000) * 100);
+    if (Platform.OS === 'ios') {
+      ActionSheetIOS.showActionSheetWithOptions(
+        {
+          title: `Context: ${contextTokens.toLocaleString()} tokens (${pct}% of 200k)`,
+          options: ['Compact (summarize)', 'Clear (start fresh)', 'Cancel'],
+          cancelButtonIndex: 2,
+          destructiveButtonIndex: 1,
+        },
+        async (index) => {
+          if (index === 0 && sessionId) {
+            setStatusDetail('Compacting context...');
+            await compactSession(sessionId);
+            setContextTokens(0);
+            setStatusDetail(undefined);
+          } else if (index === 1 && sessionId) {
+            await clearContext(sessionId);
+            setContextTokens(0);
+          }
+        },
+      );
+    }
+  }
+
+  async function handleImageAttach() {
+    if (uiState !== 'idle' || !sessionId) return;
+
+    if (Platform.OS === 'ios') {
+      ActionSheetIOS.showActionSheetWithOptions(
+        {
+          options: ['Choose from Library', 'Paste from Clipboard', 'Cancel'],
+          cancelButtonIndex: 2,
+        },
+        async (index) => {
+          if (index === 0) await pickImageFromLibrary();
+          if (index === 1) await pasteFromClipboard();
+        },
+      );
+    } else {
+      await pickImageFromLibrary();
+    }
+  }
+
+  async function sendImagePrompt(uri: string) {
+    try {
+      const entryId = addUserMessage('📎 Image attached');
+      setUIState('processing');
+      setStatusDetail('Sending image...');
+      const response = await sendImage(sessionId!, uri);
+      handleResponse(entryId, response);
+      setStatusDetail(undefined);
+      if (ttsEnabled && response.audio_url) {
+        setUIState('listening');
+        setReadingEntryId(entryId);
+        await playAudio(response.audio_url, response.response_text);
+      } else {
+        setUIState('idle');
+      }
+    } catch (e: any) {
+      setUIState('idle');
+      await speakError(e.message ?? 'Image upload failed');
+    }
+  }
+
+  async function pickImageFromLibrary() {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') {
+      await speakError('Photo library permission denied');
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      quality: 0.8,
+    });
+    if (!result.canceled && result.assets[0]) {
+      await sendImagePrompt(result.assets[0].uri);
+    }
+  }
+
+  async function pasteFromClipboard() {
+    // Try image first, fall back to text
+    const img = await Clipboard.getImageAsync({ format: 'jpeg' });
+    if (img?.data) {
+      const { FileSystem } = await import('expo-file-system');
+      const path = FileSystem.cacheDirectory + 'sonar_paste.jpg';
+      await FileSystem.writeAsStringAsync(path, img.data, {
+        encoding: FileSystem.EncodingType.Base64,
+      });
+      await sendImagePrompt(path);
+      return;
+    }
+
+    const text = await Clipboard.getStringAsync();
+    if (text?.trim()) {
+      await handleResendPrompt(text.trim());
+      return;
+    }
+
+    await speakError('Nothing in clipboard');
+  }
+
   function handleLeave() {
     clearSession();
     onLeaveSession();
@@ -271,6 +396,7 @@ export function VoiceScreen({ onLeaveSession }: Props) {
 
   const showOptions =
     lastResponse?.response_type === 'options' && lastResponse.options && lastResponse.options.length > 0;
+  const pendingDiff = lastResponse?.pending_diff ?? null;
 
   return (
     <SafeAreaView style={styles.container}>
@@ -284,6 +410,11 @@ export function VoiceScreen({ onLeaveSession }: Props) {
           </Text>
         </TouchableOpacity>
         <View style={styles.headerRight}>
+          <TouchableOpacity onPress={handleContextMenu}>
+            <Text style={[styles.ctxText, contextTokens > 160000 && styles.ctxWarn]}>
+              {contextTokens > 0 ? `${Math.round(contextTokens / 1000)}k` : 'ctx'}
+            </Text>
+          </TouchableOpacity>
           <TouchableOpacity onPress={handleTogglePlan}>
             <Text style={[styles.planText, !planMode && styles.planOff]}>Plan</Text>
           </TouchableOpacity>
@@ -292,13 +423,20 @@ export function VoiceScreen({ onLeaveSession }: Props) {
           </TouchableOpacity>
           <TouchableOpacity onPress={toggleTTS}>
             <Text style={[styles.ttsText, !ttsEnabled && styles.ttsOff]}>
-              {ttsEnabled ? 'TTS' : 'TTS'}
+              {ttsEnabled ? 'TTS ON' : 'TTS OFF'}
             </Text>
           </TouchableOpacity>
         </View>
       </View>
 
       <View style={styles.body}>
+        {pendingDiff && (
+          <DiffDisplay
+            diff={pendingDiff}
+            onConfirm={() => handleResendPrompt('send')}
+            onCancel={() => handleResendPrompt('cancel')}
+          />
+        )}
         {showOptions && (
           <OptionsDisplay
             options={lastResponse!.options!}
@@ -319,21 +457,15 @@ export function VoiceScreen({ onLeaveSession }: Props) {
       </View>
 
       <View style={styles.controls}>
-        <StatusIndicator uiState={uiState} statusDetail={statusDetail} />
-        <View style={{ position: 'relative' }}>
-          <RecordButton
-            uiState={uiState}
-            onPressIn={handlePressIn}
-            onPressOut={handlePressOut}
-            onStopAudio={handleStopAudio}
-            onDoubleTapReplay={handleDoubleTapReplay}
-          />
-          {messageQueue.length > 0 && (
-            <View style={styles.queueBadge}>
-              <Text style={styles.queueBadgeText}>{messageQueue.length}</Text>
-            </View>
-          )}
-        </View>
+        <RecordButton
+          uiState={uiState}
+          statusDetail={messageQueue.length > 0 ? `${messageQueue.length} queued` : statusDetail}
+          onPressIn={handlePressIn}
+          onPressOut={handlePressOut}
+          onStopAudio={handleStopAudio}
+          onDoubleTapReplay={handleDoubleTapReplay}
+          onImageAttach={handleImageAttach}
+        />
       </View>
     </SafeAreaView>
   );
@@ -354,25 +486,14 @@ const styles = StyleSheet.create({
   backText: { color: '#00d4ff', fontSize: 14 },
   nameBtn: { flex: 1 },
   projectName: { color: '#eef', fontWeight: '600', fontSize: 16, textAlign: 'center' },
-  headerRight: { flexDirection: 'row', gap: 10, alignItems: 'center', width: 120, justifyContent: 'flex-end' },
+  headerRight: { flexDirection: 'row', gap: 8, alignItems: 'center', justifyContent: 'flex-end' },
+  ctxText: { color: '#445', fontSize: 11, fontWeight: '600', minWidth: 24, textAlign: 'right' },
+  ctxWarn: { color: '#ff8800' },
   planText: { color: '#00ff88', fontSize: 11, fontWeight: '600' },
   planOff: { color: '#556' },
   modelText: { color: '#ffaa00', fontSize: 11, fontWeight: '600' },
   ttsText: { color: '#00d4ff', fontSize: 11, fontWeight: '600' },
   ttsOff: { color: '#556' },
   body: { flex: 1, paddingHorizontal: 16, paddingTop: 12 },
-  controls: { alignItems: 'center', paddingBottom: 40, paddingTop: 20, gap: 16 },
-  queueBadge: {
-    position: 'absolute',
-    top: -4,
-    right: -4,
-    backgroundColor: '#ff4444',
-    borderRadius: 10,
-    minWidth: 20,
-    height: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 4,
-  },
-  queueBadgeText: { color: '#fff', fontSize: 11, fontWeight: 'bold' },
+  controls: {},
 });

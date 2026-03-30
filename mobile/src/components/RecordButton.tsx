@@ -1,5 +1,5 @@
 import React, { useRef } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { UIState } from '../types';
 
 interface Props {
@@ -9,6 +9,7 @@ interface Props {
   onPressOut: () => void;
   onStopAudio: () => void;
   onDoubleTapReplay: () => void;
+  onImageAttach?: () => void;
 }
 
 const DOUBLE_TAP_MS = 300;
@@ -22,7 +23,7 @@ const STATE_CONFIG: Record<UIState, { color: string; label: string; action: stri
 };
 
 export function RecordButton({
-  uiState, statusDetail, onPressIn, onPressOut, onStopAudio, onDoubleTapReplay,
+  uiState, statusDetail, onPressIn, onPressOut, onStopAudio, onDoubleTapReplay, onImageAttach,
 }: Props) {
   const lastTapRef = useRef<number>(0);
   const { color, label, action } = STATE_CONFIG[uiState];
@@ -76,8 +77,13 @@ export function RecordButton({
         </View>
       </View>
 
-      {/* Right: action + icon */}
+      {/* Right: attach button + action + mic icon */}
       <View style={styles.actionSide}>
+        {onImageAttach && uiState === 'idle' && (
+          <TouchableOpacity onPress={onImageAttach} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
+            <Text style={styles.attachIcon}>📎</Text>
+          </TouchableOpacity>
+        )}
         {action ? <Text style={[styles.actionText, { color }]}>{action}</Text> : null}
         <Text style={styles.icon}>{micIcon}</Text>
       </View>
@@ -132,5 +138,9 @@ const styles = StyleSheet.create({
   },
   icon: {
     fontSize: 24,
+  },
+  attachIcon: {
+    fontSize: 20,
+    opacity: 0.6,
   },
 });

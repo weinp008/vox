@@ -37,6 +37,17 @@ export interface ResumeSessionResponse {
   conversation: { role: string; content: string }[];
 }
 
+export async function listProjects(): Promise<string[]> {
+  try {
+    const res = await fetch(`${BASE_URL}/projects`);
+    if (!res.ok) return [];
+    const data = await res.json();
+    return data.projects ?? [];
+  } catch {
+    return [];
+  }
+}
+
 export async function listSessions(): Promise<SessionSummary[]> {
   const res = await fetch(`${BASE_URL}/sessions`);
   if (!res.ok) return [];
@@ -153,6 +164,17 @@ export async function updateSettings(updates: Partial<Pick<SonarSettings, 'model
     body: JSON.stringify(updates),
   });
   return res.json();
+}
+
+export async function compactSession(sessionId: string): Promise<{ ok: boolean; message: string }> {
+  const res = await fetchWithTimeout(`${BASE_URL}/session/${sessionId}/compact`, {
+    method: 'POST',
+  }, 60000);
+  return res.json();
+}
+
+export async function clearContext(sessionId: string): Promise<void> {
+  await fetch(`${BASE_URL}/session/${sessionId}/clear`, { method: 'POST' });
 }
 
 export async function renameSession(sessionId: string, name: string): Promise<void> {
