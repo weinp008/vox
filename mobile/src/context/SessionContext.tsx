@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, ReactNode } from 'react';
-import { ConversationEntry, PromptResponse, UIState } from '../types';
+import { ConversationEntry, PromptResponse, SessionState, UIState } from '../types';
 
 interface SessionContextValue {
   sessionId: string | null;
@@ -10,6 +10,8 @@ interface SessionContextValue {
   isCompact: boolean;
   ttsEnabled: boolean;
   setSession: (id: string, name: string) => void;
+  /** Restore conversation from a resumed session. */
+  restoreConversation: (messages: { role: string; content: string }[]) => void;
   addUserMessage: (text: string) => string;
   setEntryResponse: (entryId: string, response: PromptResponse) => void;
   setUIState: (s: UIState) => void;
@@ -36,6 +38,44 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     setProjectName(name);
     setConversation([]);
     setLastResponse(null);
+  }
+
+  /** Rebuild ConversationEntry[] from raw backend messages. */
+  function restoreConversation(messages: { role: string; content: string }[]) {
+    const entries: ConversationEntry[] = [];
+    let currentEntry: ConversationEntry | null = null;
+
+    for (const msg of messages) {
+      if (msg.role === 'user') {
+        // Start a new entry
+        const id = `entry-${++entryCounter}`;
+        currentEntry = { id, userText: msg.content, response: null };
+        entries.push(currentEntry);
+      } else if (msg.role === 'assistant' && currentEntry) {
+        // Attach as a minimal PromptResponse
+        currentEntry.response = {
+          session_id: sessionId ?? '',
+          transcript: currentEntry.userText,
+          response_text: msg.content,
+          response_type: 'freeform',
+          options: null,
+          pending_diff: null,
+          audio_url: null,
+          state: 'idle' as SessionState,
+        };
+      }
+    }
+
+    setConversation(entries);
+    // Set lastResponse from the last entry that has one
+    const lastWithResponse = [...entries].reverse().find((e) => e.response);
+    if (lastWithResponse?.response) {
+      setLastResponse(lastWithResponse.response);
+    }
+    // Auto-compact if there are many entries
+    if (entries.length > 4) {
+      setIsCompact(true);
+    }
   }
 
   function addUserMessage(text: string): string {
@@ -67,7 +107,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     <SessionContext.Provider
       value={{
         sessionId, projectName, conversation, lastResponse, uiState, isCompact, ttsEnabled,
-        setSession, addUserMessage, setEntryResponse, setUIState, toggleCompact, toggleTTS, clearSession,
+        setSession, restoreConversation, addUserMessage, setEntryResponse, setUIState,
+        toggleCompact, toggleTTS, clearSession,
       }}
     >
       {children}

@@ -4,6 +4,37 @@ import { PromptResponse, SessionState, StartSessionResponse } from './types';
 // Physical device: http://<your-lan-ip>:8000
 export const BASE_URL = 'http://192.168.68.60:8000';
 
+export interface SessionSummary {
+  session_id: string;
+  project_name: string;
+  message_count: number;
+  last_message: string;
+  updated_at: number;
+}
+
+export interface ResumeSessionResponse {
+  session_id: string;
+  project_name: string;
+  files: string[];
+  recent_commits: string[];
+  conversation: { role: string; content: string }[];
+}
+
+export async function listSessions(): Promise<SessionSummary[]> {
+  const res = await fetch(`${BASE_URL}/sessions`);
+  if (!res.ok) return [];
+  return res.json();
+}
+
+export async function resumeSession(sessionId: string): Promise<ResumeSessionResponse> {
+  const res = await fetch(`${BASE_URL}/session/${sessionId}/resume`);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error(err.detail ?? 'Failed to resume session');
+  }
+  return res.json();
+}
+
 export async function startSession(projectPath: string): Promise<StartSessionResponse> {
   const res = await fetch(`${BASE_URL}/session/start`, {
     method: 'POST',

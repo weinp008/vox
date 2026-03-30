@@ -18,7 +18,7 @@ from app.models import (
     StartSessionRequest,
     StartSessionResponse,
 )
-from app.session import create_session, get_session
+from app.session import create_session, get_session, list_sessions
 from app.transcription import transcribe_audio
 from app.tts import generate_speech
 
@@ -33,9 +33,31 @@ app.add_middleware(
 )
 
 
+class SessionSummary(BaseModel):
+    session_id: str
+    project_name: str
+    message_count: int
+    last_message: str
+    updated_at: float
+
+
+class ResumeSessionResponse(BaseModel):
+    session_id: str
+    project_name: str
+    files: list[str]
+    recent_commits: list[str]
+    conversation: list[dict]
+
+
+@app.get("/sessions", response_model=list[SessionSummary])
+async def get_sessions():
+    """List all saved sessions, most recent first."""
+    return [SessionSummary(**s) for s in list_sessions()]
+
+
 @app.post("/session/start", response_model=StartSessionResponse)
 async def start_session(req: StartSessionRequest):
-    """Initialize a project session from a local clone."""
+    """Initialize a new project session."""
     project_path = os.path.join(settings.projects_dir, req.project_path)
 
     if not os.path.isdir(project_path):
@@ -45,8 +67,24 @@ async def start_session(req: StartSessionRequest):
     return StartSessionResponse(
         session_id=session.id,
         project_name=session.project_name,
-        files=session.files[:50],  # Cap for response size
+        files=session.files[:50],
         recent_commits=session.recent_commits,
+    )
+
+
+@app.get("/session/{session_id}/resume", response_model=ResumeSessionResponse)
+async def resume_session(session_id: str):
+    """Resume an existing session with full conversation history."""
+    session = get_session(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    return ResumeSessionResponse(
+        session_id=session.id,
+        project_name=session.project_name,
+        files=session.files[:50],
+        recent_commits=session.recent_commits,
+        conversation=session.conversation,
     )
 
 
