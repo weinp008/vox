@@ -1,4 +1,4 @@
-import React, { useCallback } from 'react';
+import React, { useCallback, useState } from 'react';
 import { Alert, SafeAreaView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { transcribeAudio, sendText, requestTTS } from '../api';
 import { OptionsDisplay } from '../components/OptionsDisplay';
@@ -23,6 +23,7 @@ export function VoiceScreen({ onLeaveSession }: Props) {
     setUIState('idle');
   }, [setUIState]);
 
+  const [statusDetail, setStatusDetail] = useState<string | undefined>();
   const { playAudio, stopAudio, replayAudio } = useAudioPlayer(handlePlaybackFinished);
   const { startRecording, stopRecording } = useAudioRecorder();
 
@@ -89,14 +90,17 @@ export function VoiceScreen({ onLeaveSession }: Props) {
 
       // Step 1: Transcribe
       setUIState('transcribing');
+      setStatusDetail('Sending to Whisper...');
       const transcript = await transcribeAudio(uri);
       const entryId = addUserMessage(transcript);
 
-      // Step 2: Send to Claude (with TTS toggle)
+      // Step 2: Send to Claude
       setUIState('processing');
+      setStatusDetail('Waiting for Claude...');
       const currentState = lastResponse?.state ?? 'idle';
       const response = await sendText(sessionId!, transcript, currentState, ttsEnabled);
       setEntryResponse(entryId, response);
+      setStatusDetail(undefined);
 
       // Step 3: Play TTS if enabled and available
       if (ttsEnabled && response.audio_url) {
@@ -177,7 +181,7 @@ export function VoiceScreen({ onLeaveSession }: Props) {
       </View>
 
       <View style={styles.controls}>
-        <StatusIndicator uiState={uiState} />
+        <StatusIndicator uiState={uiState} statusDetail={statusDetail} />
         <RecordButton
           uiState={uiState}
           onPressIn={handlePressIn}

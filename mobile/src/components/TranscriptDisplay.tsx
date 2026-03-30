@@ -96,21 +96,29 @@ export function TranscriptDisplay({ conversation, isCompact, onReadAloud, onAskC
             {entry.response ? (
               <View style={styles.responseBubble}>
                 {showFull ? (
-                  splitIntoParagraphs(entry.response.response_text).map((para, pi) => {
-                    const textFromHere = splitIntoParagraphs(entry.response!.response_text).slice(pi).join('\n\n');
-                    return (
-                      <TouchableOpacity
-                        key={pi}
-                        activeOpacity={0.7}
-                        onLongPress={() => handleLongPress(textFromHere, entry.response!.response_text, `${entry.id}-${pi}`)}
-                        delayLongPress={400}
-                      >
-                        <Text style={[styles.responseText, pi > 0 && styles.paragraphGap]}>
-                          {para}
-                        </Text>
-                      </TouchableOpacity>
-                    );
-                  })
+                  <>
+                    {splitIntoParagraphs(entry.response.response_text).map((para, pi) => {
+                      const textFromHere = splitIntoParagraphs(entry.response!.response_text).slice(pi).join('\n\n');
+                      return (
+                        <TouchableOpacity
+                          key={pi}
+                          activeOpacity={0.7}
+                          onLongPress={() => handleLongPress(textFromHere, entry.response!.response_text, `${entry.id}-${pi}`)}
+                          delayLongPress={400}
+                        >
+                          <Text style={[styles.responseText, pi > 0 && styles.paragraphGap]}>
+                            {para}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                    {entry.response.timing && (
+                      <Text style={styles.timingText}>
+                        Claude {entry.response.timing.claude}s
+                        {entry.response.timing.tts > 0 ? ` · TTS ${entry.response.timing.tts}s` : ''}
+                      </Text>
+                    )}
+                  </>
                 ) : (
                   <Text style={styles.responseTextCompact}>
                     {summarize(entry.response.response_text)}
@@ -175,4 +183,5 @@ const styles = StyleSheet.create({
     borderLeftColor: '#ffaa00',
   },
   thinkingText: { color: '#ffaa00', fontSize: 13 },
+  timingText: { color: '#334', fontSize: 10, marginTop: 8, textAlign: 'right' },
 });

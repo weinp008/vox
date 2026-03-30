@@ -150,7 +150,11 @@ async def _get_response(session, text: str):
 
 async def _process_prompt(session, text: str, tts: bool = True) -> PromptResponse:
     """Shared logic: send text to Claude, generate TTS, return response."""
+    import time as _time
+
+    t0 = _time.time()
     response_text, response_type, options, diff = await _get_response(session, text)
+    claude_time = round(_time.time() - t0, 1)
 
     if diff:
         session.pending_diff = diff
@@ -161,12 +165,17 @@ async def _process_prompt(session, text: str, tts: bool = True) -> PromptRespons
         session.state = SessionState.IDLE
 
     audio_b64 = None
+    tts_time = 0.0
     if tts:
         try:
+            t1 = _time.time()
             tts_bytes = await generate_speech(response_text)
+            tts_time = round(_time.time() - t1, 1)
             audio_b64 = base64.b64encode(tts_bytes).decode()
         except Exception:
             import traceback; traceback.print_exc()
+
+    timing = {"claude": claude_time, "tts": tts_time}
 
     return PromptResponse(
         session_id=session.id,
@@ -177,6 +186,7 @@ async def _process_prompt(session, text: str, tts: bool = True) -> PromptRespons
         pending_diff=diff,
         audio_url=audio_b64,
         state=session.state,
+        timing=timing,
     )
 
 

@@ -1,5 +1,5 @@
 from enum import Enum
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 from pydantic import BaseModel
 
@@ -45,6 +45,7 @@ class PromptResponse(BaseModel):
     pending_diff: Optional[str] = None
     audio_url: Optional[str] = None
     state: SessionState
+    timing: Optional[Dict[str, float]] = None  # e.g. {"claude": 12.3, "tts": 1.5}
 
 
 class RespondRequest(BaseModel):

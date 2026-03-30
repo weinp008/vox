@@ -18,6 +18,7 @@ export interface PromptResponse {
   pending_diff: string | null;
   audio_url: string | null;
   state: SessionState;
+  timing?: { claude: number; tts: number } | null;
 }
 
 /** A single exchange in the conversation history. */

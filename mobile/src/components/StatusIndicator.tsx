@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Animated, StyleSheet, Text, View } from 'react-native';
 import { UIState } from '../types';
 
@@ -6,14 +6,28 @@ const STATE_CONFIG: Record<UIState, { color: string; label: string }> = {
   idle: { color: '#334466', label: 'Ready' },
   recording: { color: '#ff4444', label: 'Recording' },
   transcribing: { color: '#ff8800', label: 'Transcribing' },
-  processing: { color: '#ffaa00', label: 'Thinking' },
+  processing: { color: '#ffaa00', label: 'Claude is working' },
   listening: { color: '#00d4ff', label: 'Listening' },
 };
 
-export function StatusIndicator({ uiState }: { uiState: UIState }) {
+export function StatusIndicator({ uiState, statusDetail }: { uiState: UIState; statusDetail?: string }) {
   const pulse = useRef(new Animated.Value(1)).current;
   const { color, label } = STATE_CONFIG[uiState];
-  const shouldPulse = uiState === 'recording' || uiState === 'listening';
+  const shouldPulse = uiState !== 'idle';
+  const [elapsed, setElapsed] = useState(0);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Elapsed timer for non-idle states
+  useEffect(() => {
+    if (uiState !== 'idle') {
+      setElapsed(0);
+      timerRef.current = setInterval(() => setElapsed((e) => e + 1), 1000);
+      return () => { if (timerRef.current) clearInterval(timerRef.current); };
+    } else {
+      setElapsed(0);
+      if (timerRef.current) clearInterval(timerRef.current);
+    }
+  }, [uiState]);
 
   useEffect(() => {
     if (shouldPulse) {
@@ -30,11 +44,19 @@ export function StatusIndicator({ uiState }: { uiState: UIState }) {
     }
   }, [shouldPulse]);
 
+  const showTimer = uiState === 'transcribing' || uiState === 'processing';
+
   return (
     <View style={styles.container}>
       <Animated.View style={[styles.ring, { borderColor: color, transform: [{ scale: pulse }] }]} />
       <View style={[styles.dot, { backgroundColor: color }]} />
       <Text style={[styles.label, { color }]}>{label}</Text>
+      {showTimer && (
+        <Text style={[styles.timer, { color }]}>{elapsed}s</Text>
+      )}
+      {statusDetail && uiState !== 'idle' && (
+        <Text style={styles.detail}>{statusDetail}</Text>
+      )}
     </View>
   );
 }
@@ -55,4 +77,6 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   label: { fontSize: 12, letterSpacing: 1.5, textTransform: 'uppercase' },
+  timer: { fontSize: 11, marginTop: 2, fontVariant: ['tabular-nums'] },
+  detail: { color: '#556', fontSize: 10, marginTop: 2 },
 });
