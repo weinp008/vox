@@ -22,12 +22,13 @@ async def generate_speech(text: str) -> bytes:
 
     client = AsyncElevenLabs(api_key=settings.elevenlabs_api_key)
 
-    audio = await client.text_to_speech.convert(
+    audio_generator = client.text_to_speech.convert(
         voice_id=settings.elevenlabs_voice_id,
         text=clean_text,
         model_id="eleven_flash_v2_5",
     )
 
-    if isinstance(audio, bytes):
-        return audio
-    return b"".join(audio)
+    chunks = []
+    async for chunk in audio_generator:
+        chunks.append(chunk)
+    return b"".join(chunks)

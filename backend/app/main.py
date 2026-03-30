@@ -84,8 +84,8 @@ async def prompt(
     try:
         tts_bytes = await generate_speech(response_text)
         audio_b64 = base64.b64encode(tts_bytes).decode()
-    except Exception:
-        pass  # TTS failure is non-fatal; client can fall back to on-device TTS
+    except Exception as e:
+        import traceback; traceback.print_exc()  # Log TTS errors for debugging
 
     return PromptResponse(
         session_id=session.id,
