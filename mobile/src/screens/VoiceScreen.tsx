@@ -3,7 +3,7 @@ import { ActionSheetIOS, Alert, Platform, SafeAreaView, StyleSheet, Text, Toucha
 
 import * as Clipboard from 'expo-clipboard';
 import * as ImagePicker from 'expo-image-picker';
-import { transcribeAudio, sendText, sendImage, requestTTS, updateSettings, getSettings, renameSession, getActivity, compactSession, clearContext } from '../api';
+import { transcribeAudio, sendText, sendImage, requestTTS, updateSettings, getSettings, renameSession, getActivity, compactSession, clearContext, getLastResponse, SonarSettings } from '../api';
 import { DiffDisplay } from '../components/DiffDisplay';
 import { OptionsDisplay } from '../components/OptionsDisplay';
 import { RecordButton } from '../components/RecordButton';
@@ -32,11 +32,12 @@ export function VoiceScreen({ onLeaveSession }: Props) {
   const [readingEntryId, setReadingEntryId] = useState<string | null>(null);
   const [currentModel, setCurrentModel] = useState('sonnet');
   const [planMode, setPlanMode] = useState(false);
+  const [mobileMode, setMobileMode] = useState<SonarSettings['mobile_mode']>('diff_only');
   const [displayName, setDisplayName] = useState(projectName);
   const [contextTokens, setContextTokens] = useState(0);
 
   function handleResponse(entryId: string, response: import('../types').PromptResponse) {
-    handleResponse(entryId, response);
+    setEntryResponse(entryId, response);
     if (response.context_tokens) setContextTokens(response.context_tokens);
   }
 
@@ -47,6 +48,7 @@ export function VoiceScreen({ onLeaveSession }: Props) {
     getSettings().then((s) => {
       setCurrentModel(s.model);
       setPlanMode(s.plan_mode ?? false);
+      setMobileMode(s.mobile_mode ?? 'diff_only');
     }).catch(() => {});
   }, []);
 
@@ -64,20 +66,27 @@ export function VoiceScreen({ onLeaveSession }: Props) {
       if (activityPollRef.current) clearInterval(activityPollRef.current);
     }
   }, [uiState, sessionId]);
-  // Auto-send queued messages when idle
+  // Auto-send queued messages when idle (with guard to prevent re-entry)
+  const processingQueueRef = useRef(false);
   useEffect(() => {
-    if (uiState === 'idle' && messageQueue.length > 0) {
+    if (uiState === 'idle' && messageQueue.length > 0 && !processingQueueRef.current) {
+      processingQueueRef.current = true;
       const next = dequeueMessage();
       if (next) {
-        handleResendPrompt(next);
+        handleResendPrompt(next).finally(() => {
+          processingQueueRef.current = false;
+        });
+      } else {
+        processingQueueRef.current = false;
       }
     }
-  }, [uiState, messageQueue.length]);
+  }, [uiState]);
 
   const { playAudio, stopAudio, replayAudio, currentWordIndex } = useAudioPlayer(handlePlaybackFinished);
   const { startRecording, stopRecording } = useAudioRecorder();
 
   async function speakError(message: string) {
+    setUIState('idle');
     setStatusDetail(message);
     if (ttsEnabled) {
       try {
@@ -85,10 +94,31 @@ export function VoiceScreen({ onLeaveSession }: Props) {
         setUIState('listening');
         await playAudio(audio, message);
       } catch {
-        // TTS failed — statusDetail still shows the error
+        setUIState('idle');
       }
     }
     setStatusDetail(undefined);
+  }
+
+  /** After a timeout, check if the backend actually completed and recover the response. */
+  async function tryRecoverResponse(entryId: string) {
+    if (!sessionId) return;
+    setStatusDetail('Checking for response...');
+    const text = await getLastResponse(sessionId);
+    setStatusDetail(undefined);
+    if (!text) return;
+    const recovered: import('../types').PromptResponse = {
+      session_id: sessionId,
+      transcript: '',
+      response_text: text,
+      response_type: 'freeform',
+      options: null,
+      pending_diff: null,
+      audio_url: null,
+      state: 'idle',
+    };
+    handleResponse(entryId, recovered);
+    setUIState('idle');
   }
 
   function handleStopAudio() {
@@ -212,19 +242,28 @@ export function VoiceScreen({ onLeaveSession }: Props) {
       const transcript = await transcribeAudio(uri);
       const entryId = addUserMessage(transcript);
 
-      setUIState('processing');
-      setStatusDetail('Waiting for Claude...');
-      const currentState = lastResponse?.state ?? 'idle';
-      const response = await sendText(sessionId!, transcript, currentState, ttsEnabled);
-      handleResponse(entryId, response);
-      setStatusDetail(undefined);
+      try {
+        setUIState('processing');
+        setStatusDetail('Waiting for Claude...');
+        const currentState = lastResponse?.state ?? 'idle';
+        const response = await sendText(sessionId!, transcript, currentState, ttsEnabled);
+        handleResponse(entryId, response);
+        setStatusDetail(undefined);
 
-      if (ttsEnabled && response.audio_url) {
-        setUIState('listening');
-        setReadingEntryId(entryId);
-        await playAudio(response.audio_url, response.response_text);
-      } else {
-        setUIState('idle');
+        if (ttsEnabled && response.audio_url) {
+          setUIState('listening');
+          setReadingEntryId(entryId);
+          await playAudio(response.audio_url, response.response_text);
+        } else {
+          setUIState('idle');
+        }
+      } catch (e: any) {
+        const isTimeout = e.message?.includes('timed out');
+        if (isTimeout) {
+          await tryRecoverResponse(entryId);
+        } else {
+          await speakError(e.message ?? 'Something went wrong');
+        }
       }
     } catch (e: any) {
       setUIState('idle');
@@ -281,6 +320,26 @@ export function VoiceScreen({ onLeaveSession }: Props) {
             const model = models[index];
             setCurrentModel(model);
             updateSettings({ model });
+          }
+        },
+      );
+    }
+  }
+
+  function handleMobileModeSwitch() {
+    if (Platform.OS === 'ios') {
+      ActionSheetIOS.showActionSheetWithOptions(
+        {
+          title: `Mode: ${mobileMode}`,
+          options: ['Diff only (show, copy manually)', 'Diff + accept (show, tap to apply)', 'Pure vibe (auto-apply, voice only)', 'Cancel'],
+          cancelButtonIndex: 3,
+        },
+        (index) => {
+          const modes: SonarSettings['mobile_mode'][] = ['diff_only', 'diff_with_accept', 'pure_vibe'];
+          if (index < 3) {
+            const mode = modes[index];
+            setMobileMode(mode);
+            updateSettings({ mobile_mode: mode });
           }
         },
       );
@@ -418,6 +477,11 @@ export function VoiceScreen({ onLeaveSession }: Props) {
           <TouchableOpacity onPress={handleTogglePlan}>
             <Text style={[styles.planText, !planMode && styles.planOff]}>Plan</Text>
           </TouchableOpacity>
+          <TouchableOpacity onPress={handleMobileModeSwitch}>
+            <Text style={[styles.modeText, mobileMode === 'pure_vibe' && styles.modeVibe, mobileMode === 'diff_with_accept' && styles.modeAccept]}>
+              {mobileMode === 'pure_vibe' ? 'Vibe' : mobileMode === 'diff_with_accept' ? 'Accept' : 'Diff'}
+            </Text>
+          </TouchableOpacity>
           <TouchableOpacity onPress={handleModelSwitch}>
             <Text style={styles.modelText}>{currentModel}</Text>
           </TouchableOpacity>
@@ -494,6 +558,9 @@ const styles = StyleSheet.create({
   modelText: { color: '#ffaa00', fontSize: 11, fontWeight: '600' },
   ttsText: { color: '#00d4ff', fontSize: 11, fontWeight: '600' },
   ttsOff: { color: '#556' },
+  modeText: { color: '#556', fontSize: 11, fontWeight: '600' },
+  modeVibe: { color: '#cc44ff' },
+  modeAccept: { color: '#44bbff' },
   body: { flex: 1, paddingHorizontal: 16, paddingTop: 12 },
   controls: {},
 });

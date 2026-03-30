@@ -4,20 +4,19 @@ import { PromptResponse, SessionState, StartSessionResponse } from './types';
 // Physical device: http://<your-lan-ip>:8000
 export const BASE_URL = 'http://192.168.68.60:8000';
 
-/** Fetch with timeout (default 120s for Claude Code calls). */
+/** Fetch with timeout (default 120s for Claude Code calls).
+ *  Uses Promise.race instead of AbortController — RN's fetch polyfill
+ *  does not reliably reject on abort, which causes the UI to hang forever.
+ */
 async function fetchWithTimeout(
   url: string,
   options: RequestInit = {},
   timeoutMs: number = 120000,
 ): Promise<Response> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    const res = await fetch(url, { ...options, signal: controller.signal });
-    return res;
-  } finally {
-    clearTimeout(timer);
-  }
+  const timeout = new Promise<never>((_, reject) =>
+    setTimeout(() => reject(new Error(`Request timed out after ${timeoutMs / 1000}s`)), timeoutMs),
+  );
+  return Promise.race([fetch(url, options), timeout]);
 }
 
 export interface SessionSummary {
@@ -35,6 +34,22 @@ export interface ResumeSessionResponse {
   files: string[];
   recent_commits: string[];
   conversation: { role: string; content: string }[];
+}
+
+/** Fetch the latest assistant message for a session (used for timeout recovery). */
+export async function getLastResponse(sessionId: string): Promise<string | null> {
+  try {
+    const res = await fetch(`${BASE_URL}/session/${sessionId}/resume`);
+    if (!res.ok) return null;
+    const data: ResumeSessionResponse = await res.json();
+    const msgs = data.conversation;
+    for (let i = msgs.length - 1; i >= 0; i--) {
+      if (msgs[i].role === 'assistant') return msgs[i].content;
+    }
+    return null;
+  } catch {
+    return null;
+  }
 }
 
 export async function listProjects(): Promise<string[]> {
@@ -150,6 +165,7 @@ export interface SonarSettings {
   allowed_tools: string[];
   use_claude_code: boolean;
   plan_mode: boolean;
+  mobile_mode: 'diff_only' | 'diff_with_accept' | 'pure_vibe';
 }
 
 export async function getSettings(): Promise<SonarSettings> {
@@ -157,7 +173,7 @@ export async function getSettings(): Promise<SonarSettings> {
   return res.json();
 }
 
-export async function updateSettings(updates: Partial<Pick<SonarSettings, 'model' | 'effort' | 'plan_mode'>>): Promise<SonarSettings> {
+export async function updateSettings(updates: Partial<Pick<SonarSettings, 'model' | 'effort' | 'plan_mode' | 'mobile_mode'>>): Promise<SonarSettings> {
   const res = await fetch(`${BASE_URL}/settings`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
