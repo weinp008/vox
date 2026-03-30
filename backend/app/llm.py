@@ -7,37 +7,44 @@ from app.models import ResponseType
 from app.session import Session
 
 SYSTEM_PROMPT = """\
-You are Sonar, an audio-first coding assistant. Your responses will be read aloud via text-to-speech, so optimize for listening.
+You are Sonar, a voice-driven coding assistant. Be terse. Output is read via TTS.
 
-CRITICAL RULES:
-1. Present options as numbered lists (max 4 options)
-2. Keep responses under 200 words for TTS readability
-3. Always confirm file modifications before executing — present the diff first
-4. Use these format markers on their own line:
-   - OPTIONS_START / OPTIONS_END — wrap numbered option lists
-   - CONFIRM_START / CONFIRM_END — wrap confirmation requests (include the diff)
-   - No markers needed for freeform responses
+Rules:
+- Be direct. No pleasantries, no filler, no "I can help with that".
+- Max 3 sentences for freeform responses.
+- When presenting choices, use OPTIONS_START/OPTIONS_END markers with max 4 numbered items. Nothing before or after the markers except a single-line summary.
+- When proposing code changes, use CONFIRM_START/CONFIRM_END markers containing the diff. Precede with a one-line description only.
+- Never read code aloud. Describe what changes, not the syntax.
+- Respond like a CLI tool, not a chatbot.
 
-5. When presenting code changes, describe them conversationally (don't read raw code).
-   Include the actual diff inside CONFIRM markers for the system to capture.
-6. End option lists with: "Say a number to choose, or speak to discuss."
-7. End confirmations with: "Say send to apply, or speak to discuss."
+Example option response:
+Add a health check endpoint.
+OPTIONS_START
+1. Simple /health returning ok
+2. /health with uptime and dependency checks
+3. /health with version info from git
+OPTIONS_END
 
-Current project: {project_name}
-Files in context: {file_list}
-Recent commits: {git_summary}
+Example confirm response:
+Adding GET /health endpoint to main.py.
+CONFIRM_START
+@app.get("/health")
+async def health():
+    return {{"status": "ok"}}
+CONFIRM_END
+
+Project: {project_name}
+Files: {file_list}
+Commits: {git_summary}
 """
 
 
 async def get_claude_response(session: Session, user_text: str) -> tuple[str, ResponseType, list[str] | None, str | None]:
-    """Send conversation to Claude and parse the response.
-
-    Returns (response_text, response_type, options_list, pending_diff).
-    """
+    """Send conversation to Claude and parse the response."""
     system = SYSTEM_PROMPT.format(
         project_name=session.project_name,
-        file_list=", ".join(session.files[:30]) if session.files else "(no files loaded)",
-        git_summary="; ".join(session.recent_commits) if session.recent_commits else "(no commits)",
+        file_list=", ".join(session.files[:30]) if session.files else "(none)",
+        git_summary="; ".join(session.recent_commits) if session.recent_commits else "(none)",
     )
 
     session.add_user_message(user_text)
@@ -45,7 +52,7 @@ async def get_claude_response(session: Session, user_text: str) -> tuple[str, Re
     client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
     message = await client.messages.create(
         model="claude-sonnet-4-20250514",
-        max_tokens=1024,
+        max_tokens=512,
         system=system,
         messages=session.conversation,
     )
@@ -53,24 +60,18 @@ async def get_claude_response(session: Session, user_text: str) -> tuple[str, Re
     response_text = message.content[0].text
     session.add_assistant_message(response_text)
 
-    # Parse response type
     response_type, options, diff = _parse_response(response_text)
-
     return response_text, response_type, options, diff
 
 
 def _parse_response(text: str) -> tuple[ResponseType, list[str] | None, str | None]:
     """Detect response type from format markers."""
-    options: list[str] | None = None
-    diff: str | None = None
-
     if "OPTIONS_START" in text and "OPTIONS_END" in text:
         block = text.split("OPTIONS_START")[1].split("OPTIONS_END")[0].strip()
         options = []
         for line in block.split("\n"):
             line = line.strip()
             if line and (line[0].isdigit() or line.startswith("-")):
-                # Strip leading "1. " or "1) " or "- "
                 cleaned = line.lstrip("0123456789.-) ").strip()
                 if cleaned:
                     options.append(cleaned)

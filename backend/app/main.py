@@ -4,6 +4,7 @@ import base64
 import os
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.commands import detect_command
@@ -49,28 +50,61 @@ async def start_session(req: StartSessionRequest):
     )
 
 
+class TranscribeResponse(BaseModel):
+    transcript: str
+
+
+@app.post("/transcribe", response_model=TranscribeResponse)
+async def transcribe(
+    audio: UploadFile = File(...),
+):
+    """Transcribe audio only — fast, returns transcript for live display."""
+    audio_bytes = await audio.read()
+    content_type = audio.content_type or "audio/wav"
+    transcript = await transcribe_audio(audio_bytes, content_type)
+    if not transcript:
+        raise HTTPException(status_code=400, detail="Could not transcribe audio")
+    return TranscribeResponse(transcript=transcript)
+
+
+class TextPromptRequest(BaseModel):
+    session_id: str
+    text: str
+
+
+@app.post("/prompt/text", response_model=PromptResponse)
+async def prompt_text(req: TextPromptRequest):
+    """Process a text prompt (already transcribed): Claude → TTS."""
+    session = get_session(req.session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    return await _process_prompt(session, req.text)
+
+
 @app.post("/prompt", response_model=PromptResponse)
 async def prompt(
     session_id: str = Form(...),
     audio: UploadFile = File(...),
 ):
-    """Process a voice prompt: transcribe → Claude → TTS."""
+    """Process a voice prompt: transcribe → Claude → TTS (legacy single-call)."""
     session = get_session(session_id)
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
 
-    # 1. Transcribe audio
     audio_bytes = await audio.read()
     content_type = audio.content_type or "audio/wav"
     transcript = await transcribe_audio(audio_bytes, content_type)
-
     if not transcript:
         raise HTTPException(status_code=400, detail="Could not transcribe audio")
 
-    # 2. Get Claude response
-    response_text, response_type, options, diff = await get_claude_response(session, transcript)
+    return await _process_prompt(session, transcript)
 
-    # 3. Store pending diff if confirmation
+
+async def _process_prompt(session, text: str) -> PromptResponse:
+    """Shared logic: send text to Claude, generate TTS, return response."""
+    response_text, response_type, options, diff = await get_claude_response(session, text)
+
     if diff:
         session.pending_diff = diff
         session.state = SessionState.AWAITING_RESPONSE
@@ -79,24 +113,37 @@ async def prompt(
     else:
         session.state = SessionState.IDLE
 
-    # 4. Generate TTS
     audio_b64 = None
     try:
         tts_bytes = await generate_speech(response_text)
         audio_b64 = base64.b64encode(tts_bytes).decode()
-    except Exception as e:
-        import traceback; traceback.print_exc()  # Log TTS errors for debugging
+    except Exception:
+        import traceback; traceback.print_exc()
 
     return PromptResponse(
         session_id=session.id,
-        transcript=transcript,
+        transcript=text,
         response_text=response_text,
         response_type=response_type,
         options=options,
         pending_diff=diff,
-        audio_url=audio_b64,  # Base64-encoded audio for now; swap for URL later
+        audio_url=audio_b64,
         state=session.state,
     )
+
+
+class TextRespondRequest(BaseModel):
+    session_id: str
+    text: str
+
+
+@app.post("/respond/text", response_model=PromptResponse)
+async def respond_text(req: TextRespondRequest):
+    """Process a text response (already transcribed)."""
+    session = get_session(req.session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    return await _process_respond(session, req.text)
 
 
 @app.post("/respond", response_model=PromptResponse)
@@ -104,18 +151,20 @@ async def respond(
     session_id: str = Form(...),
     audio: UploadFile = File(...),
 ):
-    """Process a follow-up response (option selection, confirm, discuss, abort)."""
+    """Process a voice follow-up (legacy single-call)."""
     session = get_session(session_id)
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
 
-    # 1. Transcribe
     audio_bytes = await audio.read()
     content_type = audio.content_type or "audio/wav"
     transcript = await transcribe_audio(audio_bytes, content_type)
-
     if not transcript:
         raise HTTPException(status_code=400, detail="Could not transcribe audio")
+    return await _process_respond(session, transcript)
+
+
+async def _process_respond(session, transcript: str) -> PromptResponse:
 
     # 2. Detect command
     command, extra = detect_command(transcript)
@@ -180,6 +229,27 @@ async def respond(
         audio_url=audio_b64,
         state=session.state,
     )
+
+
+class TTSRequest(BaseModel):
+    text: str
+
+
+class TTSResponse(BaseModel):
+    audio_url: str  # base64-encoded audio
+
+
+@app.post("/tts", response_model=TTSResponse)
+async def tts(req: TTSRequest):
+    """Generate TTS audio for arbitrary text (used for read-aloud feature)."""
+    if not req.text.strip():
+        raise HTTPException(status_code=400, detail="Empty text")
+    try:
+        tts_bytes = await generate_speech(req.text)
+        audio_b64 = base64.b64encode(tts_bytes).decode()
+        return TTSResponse(audio_url=audio_b64)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"TTS failed: {e}")
 
 
 async def _build_response(

@@ -5,7 +5,8 @@ import { UIState } from '../types';
 const STATE_CONFIG: Record<UIState, { color: string; label: string }> = {
   idle: { color: '#334466', label: 'Ready' },
   recording: { color: '#ff4444', label: 'Recording' },
-  processing: { color: '#ffaa00', label: 'Processing' },
+  transcribing: { color: '#ff8800', label: 'Transcribing' },
+  processing: { color: '#ffaa00', label: 'Thinking' },
   listening: { color: '#00d4ff', label: 'Listening' },
 };
 

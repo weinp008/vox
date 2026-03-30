@@ -1,6 +1,6 @@
 export type ResponseType = 'options' | 'confirmation' | 'freeform';
 export type SessionState = 'idle' | 'awaiting_response' | 'confirmed';
-export type UIState = 'idle' | 'recording' | 'processing' | 'listening';
+export type UIState = 'idle' | 'recording' | 'transcribing' | 'processing' | 'listening';
 
 export interface StartSessionResponse {
   session_id: string;
@@ -18,4 +18,11 @@ export interface PromptResponse {
   pending_diff: string | null;
   audio_url: string | null;
   state: SessionState;
+}
+
+/** A single exchange in the conversation history. */
+export interface ConversationEntry {
+  id: string;
+  userText: string;
+  response: PromptResponse | null; // null while Claude is still thinking
 }

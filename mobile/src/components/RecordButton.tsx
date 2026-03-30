@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useRef } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { UIState } from '../types';
 
@@ -6,20 +6,34 @@ interface Props {
   uiState: UIState;
   onPressIn: () => void;
   onPressOut: () => void;
-  onTapInterrupt: () => void;
+  onStopAudio: () => void;
+  onDoubleTapReplay: () => void;
 }
 
-export function RecordButton({ uiState, onPressIn, onPressOut, onTapInterrupt }: Props) {
+const DOUBLE_TAP_MS = 300;
+
+export function RecordButton({ uiState, onPressIn, onPressOut, onStopAudio, onDoubleTapReplay }: Props) {
   const isRecording = uiState === 'recording';
   const isListening = uiState === 'listening';
   const isProcessing = uiState === 'processing';
+  const lastTapRef = useRef<number>(0);
 
   function handlePressIn() {
     if (isListening) {
-      onTapInterrupt();
+      onStopAudio();
       return;
     }
     if (isProcessing) return;
+
+    // Detect double-tap when idle → replay last audio
+    const now = Date.now();
+    if (uiState === 'idle' && now - lastTapRef.current < DOUBLE_TAP_MS) {
+      lastTapRef.current = 0; // Reset so triple-tap doesn't re-trigger
+      onDoubleTapReplay();
+      return;
+    }
+    lastTapRef.current = now;
+
     onPressIn();
   }
 
@@ -52,6 +66,9 @@ export function RecordButton({ uiState, onPressIn, onPressOut, onTapInterrupt }:
           {isRecording ? '\u23F9' : isListening ? '\u23F8' : '\uD83C\uDF99'}
         </Text>
         <Text style={styles.label}>{label}</Text>
+        {uiState === 'idle' && (
+          <Text style={styles.hint}>Double-tap to replay</Text>
+        )}
       </View>
     </Pressable>
   );
@@ -80,7 +97,8 @@ const styles = StyleSheet.create({
     borderColor: '#334',
     opacity: 0.5,
   },
-  inner: { alignItems: 'center', gap: 8 },
+  inner: { alignItems: 'center', gap: 4 },
   icon: { fontSize: 40 },
   label: { color: '#aac', fontSize: 13, textAlign: 'center' },
+  hint: { color: '#334', fontSize: 10, textAlign: 'center' },
 });

@@ -9,6 +9,16 @@ export function useAudioRecorder() {
   const startTimeRef = useRef<number>(0);
 
   async function startRecording() {
+    // Clean up any previous recording that wasn't fully released
+    if (recordingRef.current) {
+      try {
+        await recordingRef.current.stopAndUnloadAsync();
+      } catch {
+        // Already stopped, ignore
+      }
+      recordingRef.current = null;
+    }
+
     const { granted } = await Audio.requestPermissionsAsync();
     if (!granted) throw new Error('Microphone permission denied');
 
@@ -28,11 +38,16 @@ export function useAudioRecorder() {
   /** Stop recording and return the URI, or null if it was too short (cancelled). */
   async function stopRecording(): Promise<string | null> {
     const recording = recordingRef.current;
-    if (!recording) throw new Error('No active recording');
+    if (!recording) return null;
 
     const duration = Date.now() - startTimeRef.current;
     setIsRecording(false);
-    await recording.stopAndUnloadAsync();
+
+    try {
+      await recording.stopAndUnloadAsync();
+    } catch {
+      // Already stopped
+    }
 
     await Audio.setAudioModeAsync({
       allowsRecordingIOS: false,

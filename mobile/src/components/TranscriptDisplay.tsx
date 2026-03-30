@@ -1,9 +1,69 @@
-import React from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
-import { PromptResponse } from '../types';
+import React, { useState, useRef, useEffect } from 'react';
+import {
+  ActionSheetIOS,
+  ActivityIndicator,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native';
+import * as Clipboard from 'expo-clipboard';
+import { ConversationEntry } from '../types';
 
-export function TranscriptDisplay({ response }: { response: PromptResponse | null }) {
-  if (!response) {
+interface Props {
+  conversation: ConversationEntry[];
+  isCompact: boolean;
+  onReadAloud: (text: string) => void;
+  onToggleCompact: () => void;
+}
+
+function splitIntoParagraphs(text: string): string[] {
+  return text.split(/\n{2,}/).map((p) => p.trim()).filter((p) => p.length > 0);
+}
+
+/** Truncate to first sentence for compact mode. */
+function summarize(text: string): string {
+  const first = text.split(/[.!?\n]/)[0]?.trim();
+  if (!first) return text.slice(0, 60);
+  return first.length > 80 ? first.slice(0, 77) + '...' : first;
+}
+
+export function TranscriptDisplay({ conversation, isCompact, onReadAloud, onToggleCompact }: Props) {
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+  const scrollRef = useRef<ScrollView>(null);
+
+  // Auto-scroll to bottom on new messages
+  useEffect(() => {
+    setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100);
+  }, [conversation.length, conversation[conversation.length - 1]?.response]);
+
+  function handleLongPress(textFromHere: string, fullText: string, id: string) {
+    if (Platform.OS === 'ios') {
+      ActionSheetIOS.showActionSheetWithOptions(
+        {
+          options: ['Read from here', 'Copy this section', 'Copy all', 'Cancel'],
+          cancelButtonIndex: 3,
+        },
+        (index) => {
+          if (index === 0) onReadAloud(textFromHere);
+          if (index === 1) copyText(textFromHere, id);
+          if (index === 2) copyText(fullText, id);
+        },
+      );
+    } else {
+      copyText(textFromHere, id);
+    }
+  }
+
+  function copyText(text: string, id: string) {
+    Clipboard.setStringAsync(text);
+    setCopiedId(id);
+    setTimeout(() => setCopiedId(null), 1500);
+  }
+
+  if (conversation.length === 0) {
     return (
       <View style={styles.container}>
         <Text style={styles.hint}>Hold the button and speak a voice command</Text>
@@ -12,45 +72,115 @@ export function TranscriptDisplay({ response }: { response: PromptResponse | nul
   }
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      <View style={styles.bubble}>
-        <Text style={styles.label}>You said</Text>
-        <Text style={styles.transcript}>{response.transcript}</Text>
-      </View>
-      <View style={[styles.bubble, styles.responseBubble]}>
-        <Text style={styles.label}>Sonar</Text>
-        <Text style={styles.responseText}>{response.response_text}</Text>
-      </View>
-      {response.pending_diff && (
-        <View style={styles.diffBadge}>
-          <Text style={styles.diffText}>Pending diff ready — say "send" to apply</Text>
-        </View>
+    <ScrollView ref={scrollRef} style={styles.container} contentContainerStyle={styles.content}>
+      {/* Compact toggle */}
+      {conversation.length > 2 && (
+        <TouchableOpacity onPress={onToggleCompact} style={styles.compactToggle}>
+          <Text style={styles.compactToggleText}>
+            {isCompact ? 'Show full conversation' : 'Compact view'}
+          </Text>
+        </TouchableOpacity>
       )}
+
+      {conversation.map((entry, i) => {
+        const isLast = i === conversation.length - 1;
+        const showFull = isLast || !isCompact;
+
+        return (
+          <View key={entry.id} style={[styles.entry, !isLast && isCompact && styles.entryCompact]}>
+            {/* User message */}
+            <View style={styles.userBubble}>
+              <Text style={styles.userText}>
+                {showFull ? entry.userText : summarize(entry.userText)}
+              </Text>
+            </View>
+
+            {/* Sonar response */}
+            {entry.response ? (
+              <View style={styles.responseBubble}>
+                {showFull ? (
+                  // Full view — paragraphs with long-press
+                  <>
+                    {splitIntoParagraphs(entry.response.response_text).map((para, pi) => {
+                      const textFromHere = splitIntoParagraphs(entry.response!.response_text).slice(pi).join('\n\n');
+                      return (
+                        <TouchableOpacity
+                          key={pi}
+                          activeOpacity={0.7}
+                          onLongPress={() => handleLongPress(textFromHere, entry.response!.response_text, `${entry.id}-${pi}`)}
+                          delayLongPress={400}
+                        >
+                          <Text style={[styles.responseText, pi > 0 && styles.paragraphGap]} selectable>
+                            {para}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </>
+                ) : (
+                  // Compact view — one-line summary
+                  <Text style={styles.responseTextCompact}>
+                    {summarize(entry.response.response_text)}
+                  </Text>
+                )}
+              </View>
+            ) : (
+              // Still waiting for response
+              <View style={styles.thinkingBubble}>
+                <ActivityIndicator size="small" color="#00d4ff" />
+                <Text style={styles.thinkingText}>Thinking...</Text>
+              </View>
+            )}
+          </View>
+        );
+      })}
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, width: '100%' },
-  content: { padding: 16, gap: 12 },
+  content: { padding: 16, gap: 8 },
   hint: { color: '#556', textAlign: 'center', marginTop: 40, fontSize: 15 },
-  bubble: {
+  compactToggle: { alignSelf: 'center', marginBottom: 8 },
+  compactToggleText: { color: '#00d4ff', fontSize: 12 },
+  entry: { gap: 6, marginBottom: 12 },
+  entryCompact: { marginBottom: 4 },
+  userBubble: {
+    alignSelf: 'flex-end',
+    backgroundColor: '#1a2744',
+    borderRadius: 12,
+    borderBottomRightRadius: 4,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    maxWidth: '85%',
+  },
+  userText: { color: '#aac', fontSize: 14 },
+  responseBubble: {
+    alignSelf: 'flex-start',
     backgroundColor: '#0e1628',
     borderRadius: 12,
-    padding: 14,
-    borderLeftWidth: 3,
-    borderLeftColor: '#334466',
+    borderBottomLeftRadius: 4,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    maxWidth: '90%',
+    borderLeftWidth: 2,
+    borderLeftColor: '#00d4ff',
   },
-  responseBubble: { borderLeftColor: '#00d4ff' },
-  label: { color: '#556', fontSize: 11, marginBottom: 6, textTransform: 'uppercase', letterSpacing: 1 },
-  transcript: { color: '#ccd', fontSize: 15 },
-  responseText: { color: '#eef', fontSize: 15, lineHeight: 22 },
-  diffBadge: {
-    backgroundColor: '#1a2f1a',
-    borderRadius: 8,
-    padding: 10,
-    borderWidth: 1,
-    borderColor: '#2d6a2d',
+  responseText: { color: '#eef', fontSize: 14, lineHeight: 20 },
+  responseTextCompact: { color: '#889', fontSize: 13 },
+  paragraphGap: { marginTop: 10 },
+  thinkingBubble: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#0e1628',
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    borderLeftWidth: 2,
+    borderLeftColor: '#ffaa00',
   },
-  diffText: { color: '#5d5', fontSize: 13, textAlign: 'center' },
+  thinkingText: { color: '#ffaa00', fontSize: 13 },
 });

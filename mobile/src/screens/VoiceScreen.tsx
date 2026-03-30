@@ -1,6 +1,6 @@
 import React, { useCallback } from 'react';
-import { Alert, Pressable, SafeAreaView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { sendPrompt } from '../api';
+import { Alert, SafeAreaView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { transcribeAudio, sendText, requestTTS } from '../api';
 import { OptionsDisplay } from '../components/OptionsDisplay';
 import { RecordButton } from '../components/RecordButton';
 import { StatusIndicator } from '../components/StatusIndicator';
@@ -14,19 +14,38 @@ interface Props {
 }
 
 export function VoiceScreen({ onLeaveSession }: Props) {
-  const { sessionId, projectName, lastResponse, uiState, setLastResponse, setUIState, clearSession } =
-    useSession();
+  const {
+    sessionId, projectName, conversation, lastResponse, uiState, isCompact,
+    addUserMessage, setEntryResponse, setUIState, toggleCompact, clearSession,
+  } = useSession();
 
   const handlePlaybackFinished = useCallback(() => {
     setUIState('idle');
   }, [setUIState]);
 
-  const { playAudio, stopAudio } = useAudioPlayer(handlePlaybackFinished);
+  const { playAudio, stopAudio, replayAudio } = useAudioPlayer(handlePlaybackFinished);
   const { startRecording, stopRecording } = useAudioRecorder();
 
-  function handleInterruptTTS() {
+  function handleStopAudio() {
     stopAudio();
     setUIState('idle');
+  }
+
+  async function handleDoubleTapReplay() {
+    setUIState('listening');
+    const didReplay = await replayAudio();
+    if (!didReplay) setUIState('idle');
+  }
+
+  async function handleReadAloud(text: string) {
+    if (uiState !== 'idle') return;
+    try {
+      setUIState('listening');
+      const audioBase64 = await requestTTS(text);
+      await playAudio(audioBase64);
+    } catch {
+      setUIState('idle');
+    }
   }
 
   async function handlePressIn() {
@@ -44,19 +63,24 @@ export function VoiceScreen({ onLeaveSession }: Props) {
     if (uiState !== 'recording') return;
     try {
       const uri = await stopRecording();
+      if (!uri) { setUIState('idle'); return; }
 
-      // Short press — cancelled, go back to idle
-      if (!uri) {
-        setUIState('idle');
-        return;
-      }
+      // Step 1: Transcribe — show text immediately
+      setUIState('transcribing');
+      const transcript = await transcribeAudio(uri);
 
+      // Show user's message right away with "Thinking..." placeholder
+      const entryId = addUserMessage(transcript);
+
+      // Step 2: Send to Claude
       setUIState('processing');
-
       const currentState = lastResponse?.state ?? 'idle';
-      const response = await sendPrompt(sessionId!, uri, currentState);
-      setLastResponse(response);
+      const response = await sendText(sessionId!, transcript, currentState);
 
+      // Attach response to the conversation entry
+      setEntryResponse(entryId, response);
+
+      // Step 3: Play TTS
       if (response.audio_url) {
         setUIState('listening');
         await playAudio(response.audio_url);
@@ -74,6 +98,7 @@ export function VoiceScreen({ onLeaveSession }: Props) {
     onLeaveSession();
   }
 
+  // Show options from the latest response that has them
   const showOptions =
     lastResponse?.response_type === 'options' && lastResponse.options && lastResponse.options.length > 0;
 
@@ -81,22 +106,23 @@ export function VoiceScreen({ onLeaveSession }: Props) {
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
         <TouchableOpacity onPress={handleLeave} style={styles.backBtn}>
-          <Text style={styles.backText}>← Projects</Text>
+          <Text style={styles.backText}>← Back</Text>
         </TouchableOpacity>
         <Text style={styles.projectName} numberOfLines={1}>
           {projectName}
         </Text>
-        <View style={{ width: 80 }} />
+        <View style={{ width: 60 }} />
       </View>
 
-      {/* Tap anywhere in the body to interrupt TTS */}
-      <Pressable
-        style={styles.body}
-        onPress={uiState === 'listening' ? handleInterruptTTS : undefined}
-      >
+      <View style={styles.body}>
         {showOptions && <OptionsDisplay options={lastResponse!.options!} />}
-        <TranscriptDisplay response={lastResponse} />
-      </Pressable>
+        <TranscriptDisplay
+          conversation={conversation}
+          isCompact={isCompact}
+          onReadAloud={handleReadAloud}
+          onToggleCompact={toggleCompact}
+        />
+      </View>
 
       <View style={styles.controls}>
         <StatusIndicator uiState={uiState} />
@@ -104,7 +130,8 @@ export function VoiceScreen({ onLeaveSession }: Props) {
           uiState={uiState}
           onPressIn={handlePressIn}
           onPressOut={handlePressOut}
-          onTapInterrupt={handleInterruptTTS}
+          onStopAudio={handleStopAudio}
+          onDoubleTapReplay={handleDoubleTapReplay}
         />
       </View>
     </SafeAreaView>
@@ -122,7 +149,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#0e1628',
   },
-  backBtn: { width: 80 },
+  backBtn: { width: 60 },
   backText: { color: '#00d4ff', fontSize: 14 },
   projectName: { color: '#eef', fontWeight: '600', fontSize: 16, flex: 1, textAlign: 'center' },
   body: { flex: 1, paddingHorizontal: 16, paddingTop: 12 },
