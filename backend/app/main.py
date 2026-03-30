@@ -13,6 +13,7 @@ from app.claude_code import ClaudeCodeSettings, current_settings, get_activity, 
 from app.llm import get_claude_response
 from app.models import (
     CommandType,
+    MobileMode,
     PromptResponse,
     ResponseType,
     SessionState,
@@ -111,6 +112,7 @@ class SettingsResponse(BaseModel):
     allowed_tools: list[str]
     use_claude_code: bool
     plan_mode: bool = False
+    mobile_mode: MobileMode = MobileMode.DIFF_ONLY
 
 
 class UpdateSettingsRequest(BaseModel):
@@ -118,6 +120,7 @@ class UpdateSettingsRequest(BaseModel):
     effort: str | None = None
     allowed_tools: list[str] | None = None
     plan_mode: bool | None = None
+    mobile_mode: MobileMode | None = None
 
 
 @app.get("/settings", response_model=SettingsResponse)
@@ -130,6 +133,7 @@ async def get_settings():
         allowed_tools=cc.current_settings.allowed_tools,
         use_claude_code=settings.use_claude_code,
         plan_mode=cc.current_settings.plan_mode,
+        mobile_mode=cc.current_settings.mobile_mode,
     )
 
 
@@ -145,12 +149,15 @@ async def update_settings(req: UpdateSettingsRequest):
         cc.current_settings.allowed_tools = req.allowed_tools
     if req.plan_mode is not None:
         cc.current_settings.plan_mode = req.plan_mode
+    if req.mobile_mode is not None:
+        cc.current_settings.mobile_mode = req.mobile_mode
     return SettingsResponse(
         model=cc.current_settings.model,
         effort=cc.current_settings.effort,
         allowed_tools=cc.current_settings.allowed_tools,
         use_claude_code=settings.use_claude_code,
         plan_mode=cc.current_settings.plan_mode,
+        mobile_mode=cc.current_settings.mobile_mode,
     )
 
 
@@ -254,8 +261,17 @@ async def _get_response(session, text: str):
     return await get_claude_response(session, text)
 
 
+def _extract_voice_summary(response_text: str) -> str:
+    """Extract the one-line description before CONFIRM_START for pure_vibe mode."""
+    if "CONFIRM_START" in response_text:
+        summary = response_text.split("CONFIRM_START")[0].strip()
+        return summary or "Changes ready."
+    return response_text
+
+
 async def _process_prompt(session, text: str, tts: bool = True) -> PromptResponse:
     """Shared logic: send text to Claude, generate TTS, return response."""
+    import app.claude_code as cc
     import time as _time
 
     t0 = _time.time()
@@ -270,12 +286,20 @@ async def _process_prompt(session, text: str, tts: bool = True) -> PromptRespons
     else:
         session.state = SessionState.IDLE
 
+    # In pure_vibe mode: strip the diff from the response — user hears a summary only.
+    # The diff is retained on the session for when they confirm.
+    client_response_text = response_text
+    client_diff = diff
+    if cc.current_settings.mobile_mode == MobileMode.PURE_VIBE and diff:
+        client_response_text = _extract_voice_summary(response_text)
+        client_diff = None  # Don't expose diff to client
+
     audio_b64 = None
     tts_time = 0.0
     if tts:
         try:
             t1 = _time.time()
-            tts_bytes = await generate_speech(response_text)
+            tts_bytes = await generate_speech(client_response_text)
             tts_time = round(_time.time() - t1, 1)
             audio_b64 = base64.b64encode(tts_bytes).decode()
         except Exception:
@@ -286,10 +310,10 @@ async def _process_prompt(session, text: str, tts: bool = True) -> PromptRespons
     return PromptResponse(
         session_id=session.id,
         transcript=text,
-        response_text=response_text,
+        response_text=client_response_text,
         response_type=response_type,
         options=options,
-        pending_diff=diff,
+        pending_diff=client_diff,
         audio_url=audio_b64,
         state=session.state,
         timing=timing,
@@ -329,7 +353,29 @@ async def respond(
     return await _process_respond(session, transcript)
 
 
+async def _apply_changes_to_disk(session, diff: str) -> str:
+    """Apply pending changes to disk using Claude Code CLI.
+
+    Called in diff_with_accept and pure_vibe modes after user confirms.
+    Requires use_claude_code=True — falls back gracefully if not available.
+    """
+    if not settings.use_claude_code:
+        return (
+            f"Cannot apply automatically — Claude Code is disabled. "
+            f"Here's the diff to apply manually:\n\n{diff}"
+        )
+
+    instruction = (
+        "Apply the following changes to the codebase exactly as described. "
+        "Write the files. Do not ask questions.\n\n"
+        f"{diff}"
+    )
+    result_text, _, _, _ = await get_claude_code_response(session, instruction)
+    return result_text
+
+
 async def _process_respond(session, transcript: str, tts: bool = True) -> PromptResponse:
+    import app.claude_code as cc
 
     # 2. Detect command
     command, extra = detect_command(transcript)
@@ -343,10 +389,26 @@ async def _process_respond(session, transcript: str, tts: bool = True) -> Prompt
 
     elif command == CommandType.SEND:
         if session.pending_diff:
-            # In MVP, we just confirm the diff is ready — don't actually apply it
-            response_text = f"Here's the diff to apply:\n\n{session.pending_diff}\n\nCopy this to your editor to apply. Session ready for next task."
+            diff_to_apply = session.pending_diff
             session.pending_diff = None
             session.state = SessionState.IDLE
+            mode = cc.current_settings.mobile_mode
+
+            if mode == MobileMode.DIFF_ONLY:
+                # Original behaviour: hand the diff back for manual application
+                response_text = (
+                    f"Here's the diff to apply:\n\n{diff_to_apply}\n\n"
+                    "Copy this to your editor to apply. Session ready for next task."
+                )
+            elif mode in (MobileMode.DIFF_WITH_ACCEPT, MobileMode.PURE_VIBE):
+                # Apply changes to disk via Claude Code, then report back
+                apply_result = await _apply_changes_to_disk(session, diff_to_apply)
+                response_text = f"Done. {apply_result}"
+            else:
+                response_text = (
+                    f"Here's the diff to apply:\n\n{diff_to_apply}\n\n"
+                    "Copy this to your editor to apply."
+                )
         else:
             response_text = "No pending changes to send. What would you like to work on?"
             session.state = SessionState.IDLE

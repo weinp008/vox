@@ -16,6 +16,12 @@ class SessionState(str, Enum):
     CONFIRMED = "confirmed"
 
 
+class MobileMode(str, Enum):
+    DIFF_ONLY = "diff_only"          # Show diff, user copies manually (default)
+    DIFF_WITH_ACCEPT = "diff_with_accept"  # Show diff, "accept" applies it to disk
+    PURE_VIBE = "pure_vibe"          # Voice summary only, no diff shown, auto-apply on confirm
+
+
 class CommandType(str, Enum):
     NUMERIC = "numeric"
     DISCUSS = "discuss"

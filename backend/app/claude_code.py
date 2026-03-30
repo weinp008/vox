@@ -5,7 +5,7 @@ import json
 import subprocess
 from dataclasses import dataclass, field
 
-from app.models import ResponseType
+from app.models import MobileMode, ResponseType
 
 
 @dataclass
@@ -15,6 +15,7 @@ class ClaudeCodeSettings:
     effort: str = "low"  # low, medium, high, max
     allowed_tools: list[str] = field(default_factory=lambda: ["Read", "Grep", "Glob", "Bash", "Edit", "Write"])
     plan_mode: bool = False
+    mobile_mode: MobileMode = MobileMode.DIFF_ONLY
 
 
 # Global settings — updated via /settings endpoint

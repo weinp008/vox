@@ -4,6 +4,22 @@ import { PromptResponse, SessionState, StartSessionResponse } from './types';
 // Physical device: http://<your-lan-ip>:8000
 export const BASE_URL = 'http://192.168.68.60:8000';
 
+/** Fetch with timeout (default 120s for Claude Code calls). */
+async function fetchWithTimeout(
+  url: string,
+  options: RequestInit = {},
+  timeoutMs: number = 120000,
+): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, { ...options, signal: controller.signal });
+    return res;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export interface SessionSummary {
   session_id: string;
   project_name: string;
@@ -58,10 +74,10 @@ export async function transcribeAudio(audioUri: string): Promise<string> {
     type: 'audio/m4a',
   } as any);
 
-  const res = await fetch(`${BASE_URL}/transcribe`, {
+  const res = await fetchWithTimeout(`${BASE_URL}/transcribe`, {
     method: 'POST',
     body: form,
-  });
+  }, 30000); // 30s for transcription
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: res.statusText }));
     throw new Error(err.detail ?? 'Transcription failed');
@@ -79,11 +95,11 @@ export async function sendText(
 ): Promise<PromptResponse> {
   const endpoint = sessionState === 'awaiting_response' ? '/respond/text' : '/prompt/text';
 
-  const res = await fetch(`${BASE_URL}${endpoint}`, {
+  const res = await fetchWithTimeout(`${BASE_URL}${endpoint}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ session_id: sessionId, text, tts }),
-  });
+  }, 120000); // 2 min timeout for Claude Code
 
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: res.statusText }));
@@ -93,11 +109,11 @@ export async function sendText(
 }
 
 export async function requestTTS(text: string): Promise<string> {
-  const res = await fetch(`${BASE_URL}/tts`, {
+  const res = await fetchWithTimeout(`${BASE_URL}/tts`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ text }),
-  });
+  }, 30000); // 30s for TTS
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: res.statusText }));
     throw new Error(err.detail ?? 'TTS failed');
@@ -163,10 +179,10 @@ export async function sendImage(
     form.append('caption', caption);
   }
 
-  const res = await fetch(`${BASE_URL}/prompt/image`, {
+  const res = await fetchWithTimeout(`${BASE_URL}/prompt/image`, {
     method: 'POST',
     body: form,
-  });
+  }, 120000);
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: res.statusText }));
     throw new Error(err.detail ?? 'Image upload failed');
