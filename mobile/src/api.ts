@@ -105,6 +105,17 @@ export async function requestTTS(text: string): Promise<string> {
   return data.audio_url;
 }
 
+export async function getActivity(sessionId: string): Promise<string[]> {
+  try {
+    const res = await fetch(`${BASE_URL}/session/${sessionId}/activity`);
+    if (!res.ok) return [];
+    const data = await res.json();
+    return data.activity ?? [];
+  } catch {
+    return [];
+  }
+}
+
 export interface SonarSettings {
   model: string;
   effort: string;

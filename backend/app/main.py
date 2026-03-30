@@ -9,7 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.commands import detect_command
 from app.config import settings
-from app.claude_code import ClaudeCodeSettings, current_settings, get_claude_code_response
+from app.claude_code import ClaudeCodeSettings, current_settings, get_activity, get_claude_code_response
 from app.llm import get_claude_response
 from app.models import (
     CommandType,
@@ -145,6 +145,12 @@ async def update_settings(req: UpdateSettingsRequest):
         allowed_tools=cc.current_settings.allowed_tools,
         use_claude_code=settings.use_claude_code,
     )
+
+
+@app.get("/session/{session_id}/activity")
+async def session_activity(session_id: str):
+    """Get live activity log for a session (poll during processing)."""
+    return {"activity": get_activity(session_id)}
 
 
 class TranscribeResponse(BaseModel):

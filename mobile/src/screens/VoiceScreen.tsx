@@ -1,6 +1,6 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ActionSheetIOS, Alert, Platform, SafeAreaView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { transcribeAudio, sendText, requestTTS, updateSettings, getSettings, renameSession } from '../api';
+import { transcribeAudio, sendText, requestTTS, updateSettings, getSettings, renameSession, getActivity } from '../api';
 import { OptionsDisplay } from '../components/OptionsDisplay';
 import { RecordButton } from '../components/RecordButton';
 import { StatusIndicator } from '../components/StatusIndicator';
@@ -29,10 +29,27 @@ export function VoiceScreen({ onLeaveSession }: Props) {
   const [currentModel, setCurrentModel] = useState('sonnet');
   const [displayName, setDisplayName] = useState(projectName);
 
+  const activityPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
   useEffect(() => { setDisplayName(projectName); }, [projectName]);
   useEffect(() => {
     getSettings().then((s) => setCurrentModel(s.model)).catch(() => {});
   }, []);
+
+  // Poll for activity while processing
+  useEffect(() => {
+    if (uiState === 'processing' && sessionId) {
+      activityPollRef.current = setInterval(async () => {
+        const lines = await getActivity(sessionId);
+        if (lines.length > 0) {
+          setStatusDetail(lines[lines.length - 1]);
+        }
+      }, 1500);
+      return () => { if (activityPollRef.current) clearInterval(activityPollRef.current); };
+    } else {
+      if (activityPollRef.current) clearInterval(activityPollRef.current);
+    }
+  }, [uiState, sessionId]);
   const { playAudio, stopAudio, replayAudio, currentWordIndex } = useAudioPlayer(handlePlaybackFinished);
   const { startRecording, stopRecording } = useAudioRecorder();
 
