@@ -17,6 +17,7 @@ export function VoiceScreen({ onLeaveSession }: Props) {
   const {
     sessionId, projectName, conversation, lastResponse, uiState, isCompact, ttsEnabled,
     addUserMessage, setEntryResponse, setUIState, toggleCompact, toggleTTS, clearSession,
+    messageQueue, enqueueMessage, dequeueMessage,
   } = useSession();
 
   const handlePlaybackFinished = useCallback(() => {
@@ -27,13 +28,17 @@ export function VoiceScreen({ onLeaveSession }: Props) {
   const [statusDetail, setStatusDetail] = useState<string | undefined>();
   const [readingEntryId, setReadingEntryId] = useState<string | null>(null);
   const [currentModel, setCurrentModel] = useState('sonnet');
+  const [planMode, setPlanMode] = useState(false);
   const [displayName, setDisplayName] = useState(projectName);
 
   const activityPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => { setDisplayName(projectName); }, [projectName]);
   useEffect(() => {
-    getSettings().then((s) => setCurrentModel(s.model)).catch(() => {});
+    getSettings().then((s) => {
+      setCurrentModel(s.model);
+      setPlanMode(s.plan_mode ?? false);
+    }).catch(() => {});
   }, []);
 
   // Poll for activity while processing
@@ -50,6 +55,16 @@ export function VoiceScreen({ onLeaveSession }: Props) {
       if (activityPollRef.current) clearInterval(activityPollRef.current);
     }
   }, [uiState, sessionId]);
+  // Auto-send queued messages when idle
+  useEffect(() => {
+    if (uiState === 'idle' && messageQueue.length > 0) {
+      const next = dequeueMessage();
+      if (next) {
+        handleResendPrompt(next);
+      }
+    }
+  }, [uiState, messageQueue.length]);
+
   const { playAudio, stopAudio, replayAudio, currentWordIndex } = useAudioPlayer(handlePlaybackFinished);
   const { startRecording, stopRecording } = useAudioRecorder();
 
@@ -106,22 +121,68 @@ export function VoiceScreen({ onLeaveSession }: Props) {
     }
   }
 
-  async function handlePressIn() {
-    if (uiState !== 'idle') return;
+  async function handleResendPrompt(text: string) {
+    if (uiState !== 'idle') {
+      // Queue the message if processing
+      enqueueMessage(text);
+      return;
+    }
     try {
-      setUIState('recording');
-      await startRecording();
+      const entryId = addUserMessage(text);
+      setUIState('processing');
+      setStatusDetail('Waiting for Claude...');
+      const currentState = lastResponse?.state ?? 'idle';
+      const response = await sendText(sessionId!, text, currentState, ttsEnabled);
+      setEntryResponse(entryId, response);
+      setStatusDetail(undefined);
+      if (ttsEnabled && response.audio_url) {
+        setUIState('listening');
+        setReadingEntryId(entryId);
+        await playAudio(response.audio_url, response.response_text);
+      } else {
+        setUIState('idle');
+      }
     } catch (e: any) {
       setUIState('idle');
+      Alert.alert('Error', e.message ?? 'Something went wrong');
+    }
+  }
+
+  function handleTogglePlan() {
+    const next = !planMode;
+    setPlanMode(next);
+    updateSettings({ plan_mode: next });
+  }
+
+  async function handlePressIn() {
+    if (uiState === 'recording') return;
+    // Allow recording even during processing — we'll enqueue the result
+    if (uiState !== 'idle' && uiState !== 'processing' && uiState !== 'listening') return;
+    try {
+      if (uiState === 'idle') {
+        setUIState('recording');
+      }
+      await startRecording();
+    } catch (e: any) {
+      if (uiState === 'recording') setUIState('idle');
       Alert.alert('Recording Error', e.message);
     }
   }
 
   async function handlePressOut() {
-    if (uiState !== 'recording') return;
     try {
       const uri = await stopRecording();
-      if (!uri) { setUIState('idle'); return; }
+      if (!uri) {
+        if (uiState === 'recording') setUIState('idle');
+        return;
+      }
+
+      // If we were recording during processing, transcribe and enqueue
+      if (uiState !== 'recording') {
+        const transcript = await transcribeAudio(uri);
+        enqueueMessage(transcript);
+        return;
+      }
 
       setUIState('transcribing');
       setStatusDetail('Sending to Whisper...');
@@ -223,6 +284,9 @@ export function VoiceScreen({ onLeaveSession }: Props) {
           </Text>
         </TouchableOpacity>
         <View style={styles.headerRight}>
+          <TouchableOpacity onPress={handleTogglePlan}>
+            <Text style={[styles.planText, !planMode && styles.planOff]}>Plan</Text>
+          </TouchableOpacity>
           <TouchableOpacity onPress={handleModelSwitch}>
             <Text style={styles.modelText}>{currentModel}</Text>
           </TouchableOpacity>
@@ -250,18 +314,26 @@ export function VoiceScreen({ onLeaveSession }: Props) {
           onReadAloud={handleReadAloud}
           onAskClaude={handleAskClaude}
           onToggleCompact={toggleCompact}
+          onResendPrompt={handleResendPrompt}
         />
       </View>
 
       <View style={styles.controls}>
         <StatusIndicator uiState={uiState} statusDetail={statusDetail} />
-        <RecordButton
-          uiState={uiState}
-          onPressIn={handlePressIn}
-          onPressOut={handlePressOut}
-          onStopAudio={handleStopAudio}
-          onDoubleTapReplay={handleDoubleTapReplay}
-        />
+        <View style={{ position: 'relative' }}>
+          <RecordButton
+            uiState={uiState}
+            onPressIn={handlePressIn}
+            onPressOut={handlePressOut}
+            onStopAudio={handleStopAudio}
+            onDoubleTapReplay={handleDoubleTapReplay}
+          />
+          {messageQueue.length > 0 && (
+            <View style={styles.queueBadge}>
+              <Text style={styles.queueBadgeText}>{messageQueue.length}</Text>
+            </View>
+          )}
+        </View>
       </View>
     </SafeAreaView>
   );
@@ -282,10 +354,25 @@ const styles = StyleSheet.create({
   backText: { color: '#00d4ff', fontSize: 14 },
   nameBtn: { flex: 1 },
   projectName: { color: '#eef', fontWeight: '600', fontSize: 16, textAlign: 'center' },
-  headerRight: { flexDirection: 'row', gap: 10, alignItems: 'center', width: 90, justifyContent: 'flex-end' },
+  headerRight: { flexDirection: 'row', gap: 10, alignItems: 'center', width: 120, justifyContent: 'flex-end' },
+  planText: { color: '#00ff88', fontSize: 11, fontWeight: '600' },
+  planOff: { color: '#556' },
   modelText: { color: '#ffaa00', fontSize: 11, fontWeight: '600' },
   ttsText: { color: '#00d4ff', fontSize: 11, fontWeight: '600' },
   ttsOff: { color: '#556' },
   body: { flex: 1, paddingHorizontal: 16, paddingTop: 12 },
   controls: { alignItems: 'center', paddingBottom: 40, paddingTop: 20, gap: 16 },
+  queueBadge: {
+    position: 'absolute',
+    top: -4,
+    right: -4,
+    backgroundColor: '#ff4444',
+    borderRadius: 10,
+    minWidth: 20,
+    height: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 4,
+  },
+  queueBadgeText: { color: '#fff', fontSize: 11, fontWeight: 'bold' },
 });

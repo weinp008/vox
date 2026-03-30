@@ -7,6 +7,7 @@ export const BASE_URL = 'http://192.168.68.60:8000';
 export interface SessionSummary {
   session_id: string;
   project_name: string;
+  branch: string;
   message_count: number;
   last_message: string;
   updated_at: number;
@@ -121,6 +122,7 @@ export interface SonarSettings {
   effort: string;
   allowed_tools: string[];
   use_claude_code: boolean;
+  plan_mode: boolean;
 }
 
 export async function getSettings(): Promise<SonarSettings> {
@@ -128,7 +130,7 @@ export async function getSettings(): Promise<SonarSettings> {
   return res.json();
 }
 
-export async function updateSettings(updates: Partial<Pick<SonarSettings, 'model' | 'effort'>>): Promise<SonarSettings> {
+export async function updateSettings(updates: Partial<Pick<SonarSettings, 'model' | 'effort' | 'plan_mode'>>): Promise<SonarSettings> {
   const res = await fetch(`${BASE_URL}/settings`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -143,4 +145,31 @@ export async function renameSession(sessionId: string, name: string): Promise<vo
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ name }),
   });
+}
+
+export async function sendImage(
+  sessionId: string,
+  imageUri: string,
+  caption?: string,
+): Promise<PromptResponse> {
+  const form = new FormData();
+  form.append('session_id', sessionId);
+  form.append('image', {
+    uri: imageUri,
+    name: 'image.jpg',
+    type: 'image/jpeg',
+  } as any);
+  if (caption) {
+    form.append('caption', caption);
+  }
+
+  const res = await fetch(`${BASE_URL}/prompt/image`, {
+    method: 'POST',
+    body: form,
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error(err.detail ?? 'Image upload failed');
+  }
+  return res.json();
 }

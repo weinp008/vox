@@ -37,6 +37,7 @@ app.add_middleware(
 class SessionSummary(BaseModel):
     session_id: str
     project_name: str
+    branch: str = ""
     message_count: int
     last_message: str
     updated_at: float
@@ -109,12 +110,14 @@ class SettingsResponse(BaseModel):
     effort: str
     allowed_tools: list[str]
     use_claude_code: bool
+    plan_mode: bool = False
 
 
 class UpdateSettingsRequest(BaseModel):
     model: str | None = None
     effort: str | None = None
     allowed_tools: list[str] | None = None
+    plan_mode: bool | None = None
 
 
 @app.get("/settings", response_model=SettingsResponse)
@@ -126,6 +129,7 @@ async def get_settings():
         effort=cc.current_settings.effort,
         allowed_tools=cc.current_settings.allowed_tools,
         use_claude_code=settings.use_claude_code,
+        plan_mode=cc.current_settings.plan_mode,
     )
 
 
@@ -139,11 +143,14 @@ async def update_settings(req: UpdateSettingsRequest):
         cc.current_settings.effort = req.effort
     if req.allowed_tools is not None:
         cc.current_settings.allowed_tools = req.allowed_tools
+    if req.plan_mode is not None:
+        cc.current_settings.plan_mode = req.plan_mode
     return SettingsResponse(
         model=cc.current_settings.model,
         effort=cc.current_settings.effort,
         allowed_tools=cc.current_settings.allowed_tools,
         use_claude_code=settings.use_claude_code,
+        plan_mode=cc.current_settings.plan_mode,
     )
 
 
@@ -203,6 +210,41 @@ async def prompt(
         raise HTTPException(status_code=400, detail="Could not transcribe audio")
 
     return await _process_prompt(session, transcript)
+
+
+@app.post("/prompt/image", response_model=PromptResponse)
+async def prompt_image(
+    session_id: str = Form(...),
+    image: UploadFile = File(...),
+    audio: UploadFile | None = File(None),
+    caption: str | None = Form(None),
+):
+    """Process a prompt with an image attachment."""
+    import tempfile
+
+    session = get_session(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    # Save image to temp file
+    image_bytes = await image.read()
+    suffix = os.path.splitext(image.filename or "image.png")[1] or ".png"
+    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=suffix, prefix="sonar_img_")
+    tmp.write(image_bytes)
+    tmp.close()
+
+    # Get text from audio or caption
+    text = caption or ""
+    if audio is not None:
+        audio_bytes = await audio.read()
+        if audio_bytes:
+            content_type = audio.content_type or "audio/wav"
+            transcript = await transcribe_audio(audio_bytes, content_type)
+            if transcript:
+                text = transcript
+
+    prompt = f"User uploaded an image at {tmp.name}. {text}".strip()
+    return await _process_prompt(session, prompt)
 
 
 async def _get_response(session, text: str):

@@ -97,7 +97,9 @@ export function ProjectSelectScreen({ onSessionStarted }: Props) {
                 disabled={loading}
               >
                 <View style={styles.sessionHeader}>
-                  <Text style={styles.sessionName}>{item.project_name}</Text>
+                  <Text style={styles.sessionName}>
+                    {item.project_name}{item.branch ? ` \u00B7 ${item.branch}` : ''}
+                  </Text>
                   <Text style={styles.sessionTime}>{timeAgo(item.updated_at)}</Text>
                 </View>
                 <Text style={styles.sessionPreview} numberOfLines={1}>

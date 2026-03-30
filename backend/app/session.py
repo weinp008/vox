@@ -40,6 +40,7 @@ class Session:
                         rel = os.path.relpath(os.path.join(root, f), self.project_path)
                         self.files.append(rel)
 
+        self.current_branch = ""
         try:
             result = subprocess.run(
                 ["git", "log", "--oneline", "-5"],
@@ -50,6 +51,19 @@ class Session:
             )
             if result.returncode == 0:
                 self.recent_commits = [line.strip() for line in result.stdout.strip().split("\n") if line.strip()]
+        except (subprocess.TimeoutExpired, FileNotFoundError):
+            pass
+
+        try:
+            result = subprocess.run(
+                ["git", "branch", "--show-current"],
+                cwd=self.project_path,
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            if result.returncode == 0:
+                self.current_branch = result.stdout.strip()
         except (subprocess.TimeoutExpired, FileNotFoundError):
             pass
 
@@ -74,6 +88,7 @@ class Session:
             "conversation": self.conversation,
             "pending_diff": self.pending_diff,
             "claude_code_session_id": self.claude_code_session_id,
+            "current_branch": getattr(self, "current_branch", ""),
             "created_at": self.created_at,
             "updated_at": self.updated_at,
         }
@@ -96,6 +111,7 @@ class Session:
         session.conversation = data["conversation"]
         session.pending_diff = data.get("pending_diff")
         session.claude_code_session_id = data.get("claude_code_session_id")
+        session.current_branch = data.get("current_branch", "")
         session.created_at = data.get("created_at", 0)
         session.updated_at = data.get("updated_at", 0)
         session.files = []
@@ -146,6 +162,7 @@ def list_sessions() -> list[dict]:
             sessions.append({
                 "session_id": data["id"],
                 "project_name": data["project_name"],
+                "branch": data.get("current_branch", ""),
                 "message_count": msg_count,
                 "last_message": last_msg,
                 "updated_at": data.get("updated_at", 0),

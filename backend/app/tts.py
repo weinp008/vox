@@ -16,11 +16,14 @@ def _clean_for_tts(text: str) -> str:
     return text
 
 
-async def generate_speech(text: str) -> bytes:
+async def generate_speech(text: str, speed: float = 1.15) -> bytes:
     """Generate TTS audio bytes using OpenAI TTS."""
     clean_text = _clean_for_tts(text)
     if not clean_text:
         clean_text = "Done."
+
+    # Truncate to first 500 chars — long responses shouldn't be fully read
+    clean_text = clean_text[:500]
 
     client = AsyncOpenAI(api_key=settings.openai_api_key)
     response = await client.audio.speech.create(
@@ -28,6 +31,7 @@ async def generate_speech(text: str) -> bytes:
         voice=settings.tts_voice,
         input=clean_text,
         response_format="mp3",
+        speed=speed,
     )
 
     return response.content

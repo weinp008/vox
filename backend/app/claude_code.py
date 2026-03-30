@@ -14,6 +14,7 @@ class ClaudeCodeSettings:
     model: str = "sonnet"  # sonnet, opus, haiku
     effort: str = "low"  # low, medium, high, max
     allowed_tools: list[str] = field(default_factory=lambda: ["Read", "Grep", "Glob", "Bash", "Edit", "Write"])
+    plan_mode: bool = False
 
 
 # Global settings — updated via /settings endpoint
@@ -54,7 +55,7 @@ def run_claude_code(
         "--verbose",
         "--model", s.model,
         "--effort", s.effort,
-        "--permission-mode", "default",
+        "--permission-mode", "plan" if s.plan_mode else "default",
     ]
 
     if s.allowed_tools:

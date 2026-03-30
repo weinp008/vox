@@ -23,6 +23,7 @@ interface Props {
   onReadAloud: (text: string, entryId: string) => void;
   onAskClaude: (text: string) => void;
   onToggleCompact: () => void;
+  onResendPrompt: (text: string) => void;
 }
 
 function splitIntoParagraphs(text: string): string[] {
@@ -62,11 +63,12 @@ function HighlightedText({ text, highlightIndex, style }: { text: string; highli
 
 export function TranscriptDisplay({
   conversation, isCompact, readingWordIndex, readingEntryId,
-  onReadAloud, onAskClaude, onToggleCompact,
+  onReadAloud, onAskClaude, onToggleCompact, onResendPrompt,
 }: Props) {
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const scrollRef = useRef<ScrollView>(null);
+  const lastTapRef = useRef<number>(0);
 
   function toggleExpand(entryId: string) {
     setExpandedIds((prev) => {
@@ -134,7 +136,16 @@ export function TranscriptDisplay({
           <View key={entry.id} style={[styles.entry, !isLast && isCompact && styles.entryCompact]}>
             <Pressable
               style={styles.userBubble}
-              onPress={!showFull ? () => toggleExpand(entry.id) : undefined}
+              onPress={() => {
+                const now = Date.now();
+                if (now - lastTapRef.current < 300) {
+                  onResendPrompt(entry.userText);
+                  lastTapRef.current = 0;
+                } else {
+                  lastTapRef.current = now;
+                  if (!showFull) toggleExpand(entry.id);
+                }
+              }}
             >
               <Text style={styles.userText}>
                 {showFull ? entry.userText : summarize(entry.userText)}
