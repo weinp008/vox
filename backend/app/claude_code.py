@@ -43,7 +43,7 @@ def run_claude_code(
     session_id: str | None = None,
     settings: ClaudeCodeSettings | None = None,
     sonar_session_id: str | None = None,
-) -> tuple[str, str | None, int]:
+) -> tuple[str, str | None, int, list[str]]:
     """Run a prompt through Claude Code CLI with live activity tracking."""
     s = settings or current_settings
     sid = sonar_session_id or "unknown"
@@ -74,6 +74,7 @@ def run_claude_code(
     result_text = ""
     cc_session_id = session_id
     context_tokens = 0
+    edited_files: list[str] = []
 
     try:
         for line in proc.stdout:
@@ -93,9 +94,15 @@ def run_claude_code(
                             if tool == "Read":
                                 _add_activity(sid, f"Reading {inp.get('file_path', '?').split('/')[-1]}")
                             elif tool == "Edit":
-                                _add_activity(sid, f"Editing {inp.get('file_path', '?').split('/')[-1]}")
+                                fp = inp.get('file_path', '?')
+                                _add_activity(sid, f"Editing {fp.split('/')[-1]}")
+                                if fp not in edited_files:
+                                    edited_files.append(fp)
                             elif tool == "Write":
-                                _add_activity(sid, f"Writing {inp.get('file_path', '?').split('/')[-1]}")
+                                fp = inp.get('file_path', '?')
+                                _add_activity(sid, f"Writing {fp.split('/')[-1]}")
+                                if fp not in edited_files:
+                                    edited_files.append(fp)
                             elif tool == "Bash":
                                 _add_activity(sid, f"$ {inp.get('command', '?')[:50]}")
                             elif tool == "Grep":
@@ -127,19 +134,19 @@ def run_claude_code(
     except subprocess.TimeoutExpired:
         proc.kill()
         _add_activity(sid, "Timed out")
-        return "Claude Code timed out.", cc_session_id, context_tokens
+        return "Claude Code timed out.", cc_session_id, context_tokens, edited_files
 
     if proc.returncode != 0 and not result_text:
         stderr = proc.stderr.read() if proc.stderr else ""
         _add_activity(sid, f"Error: {(stderr.strip() or 'unknown')[:80]}")
-        return stderr.strip() or "Claude Code error", cc_session_id, context_tokens
+        return stderr.strip() or "Claude Code error", cc_session_id, context_tokens, edited_files
 
-    return result_text, cc_session_id, context_tokens
+    return result_text, cc_session_id, context_tokens, edited_files
 
 
 def run_compact(cwd: str, cc_session_id: str) -> tuple[str, str | None]:
     """Run /compact on the current Claude Code session to summarize context."""
-    text, new_sid, _ = run_claude_code(
+    text, new_sid, _, _files = run_claude_code(
         "/compact",
         cwd,
         session_id=cc_session_id,
@@ -175,12 +182,12 @@ def git_stash_drop(cwd: str) -> bool:
 async def get_claude_code_response(
     session,
     user_text: str,
-) -> tuple[str, ResponseType, list[str] | None, str | None]:
+) -> tuple[str, ResponseType, list[str] | None, str | None, list[str]]:
     """Send prompt to Claude Code CLI and parse the response."""
     import asyncio
 
     loop = asyncio.get_event_loop()
-    response_text, new_cc_session, context_tokens = await loop.run_in_executor(
+    response_text, new_cc_session, context_tokens, edited_files = await loop.run_in_executor(
         None,
         run_claude_code,
         user_text,
@@ -204,4 +211,4 @@ async def get_claude_code_response(
     if diff and current_settings.mobile_mode in (MobileMode.DIFF_WITH_ACCEPT,):
         git_stash(session.project_path)
 
-    return response_text, response_type, options, diff
+    return response_text, response_type, options, diff, edited_files

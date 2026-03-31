@@ -43,18 +43,18 @@ function HighlightedText({ text, highlightIndex, style }: { text: string; highli
   if (highlightIndex < 0) {
     return <Text style={style}>{text}</Text>;
   }
-  const words = text.split(/(\s+)/); // Keep whitespace as separate tokens
+  const words = text.split(/(\s+)/);
   let wordIdx = 0;
   return (
     <Text style={style}>
       {words.map((token, i) => {
         if (/^\s+$/.test(token)) {
-          return token; // whitespace, render as-is
+          return <Text key={`ws-${i}`}>{token}</Text>;
         }
         const isHighlighted = wordIdx === highlightIndex;
         wordIdx++;
         return (
-          <Text key={i} style={isHighlighted ? styles.highlightedWord : undefined}>
+          <Text key={`w-${i}`} style={isHighlighted ? styles.highlightedWord : undefined}>
             {token}
           </Text>
         );
