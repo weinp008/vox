@@ -7,10 +7,12 @@ import { transcribeAudio, sendText, sendImage, requestTTS, updateSettings, getSe
 import { DiffDisplay } from '../components/DiffDisplay';
 import { OptionsDisplay } from '../components/OptionsDisplay';
 import { RecordButton } from '../components/RecordButton';
+import { MiniGame } from '../components/MiniGame';
 import { TranscriptDisplay } from '../components/TranscriptDisplay';
 import { useSession } from '../context/SessionContext';
 import { useAudioPlayer } from '../hooks/useAudioPlayer';
 import { useAudioRecorder } from '../hooks/useAudioRecorder';
+import { useChime } from '../hooks/useChime';
 
 interface Props {
   onLeaveSession: () => void;
@@ -33,12 +35,14 @@ export function VoiceScreen({ onLeaveSession }: Props) {
   const [currentModel, setCurrentModel] = useState('sonnet');
   const [planMode, setPlanMode] = useState(false);
   const [mobileMode, setMobileMode] = useState<SonarSettings['mobile_mode']>('diff_only');
+  const [reviewMode, setReviewMode] = useState(false);
   const [displayName, setDisplayName] = useState(projectName);
   const [contextTokens, setContextTokens] = useState(0);
 
   function handleResponse(entryId: string, response: import('../types').PromptResponse) {
     setEntryResponse(entryId, response);
     if (response.context_tokens) setContextTokens(response.context_tokens);
+    playChime(); // Haptic feedback when response arrives
   }
 
   const activityPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -84,6 +88,7 @@ export function VoiceScreen({ onLeaveSession }: Props) {
 
   const { playAudio, stopAudio, replayAudio, currentWordIndex } = useAudioPlayer(handlePlaybackFinished);
   const { startRecording, stopRecording } = useAudioRecorder();
+  const { playChime } = useChime();
 
   async function speakError(message: string) {
     setUIState('idle');
@@ -222,6 +227,21 @@ export function VoiceScreen({ onLeaveSession }: Props) {
     }
   }
 
+  function reviewTranscript(transcript: string): Promise<string | null> {
+    return new Promise((resolve) => {
+      Alert.prompt(
+        'Review before sending',
+        'Edit your message or tap Send to confirm.',
+        [
+          { text: 'Cancel', style: 'cancel', onPress: () => resolve(null) },
+          { text: 'Send', onPress: (text) => resolve(text?.trim() || transcript) },
+        ],
+        'plain-text',
+        transcript,
+      );
+    });
+  }
+
   async function handlePressOut() {
     try {
       const uri = await stopRecording();
@@ -239,7 +259,17 @@ export function VoiceScreen({ onLeaveSession }: Props) {
 
       setUIState('transcribing');
       setStatusDetail('Sending to Whisper...');
-      const transcript = await transcribeAudio(uri);
+      const rawTranscript = await transcribeAudio(uri);
+
+      let transcript = rawTranscript;
+      if (reviewMode) {
+        setUIState('idle');
+        setStatusDetail(undefined);
+        const reviewed = await reviewTranscript(rawTranscript);
+        if (!reviewed) return; // user cancelled
+        transcript = reviewed;
+      }
+
       const entryId = addUserMessage(transcript);
 
       try {
@@ -484,6 +514,9 @@ export function VoiceScreen({ onLeaveSession }: Props) {
               {contextTokens > 0 ? `${Math.round(contextTokens / 1000)}k` : 'ctx'}
             </Text>
           </TouchableOpacity>
+          <TouchableOpacity onPress={() => setReviewMode(r => !r)}>
+            <Text style={[styles.reviewText, !reviewMode && styles.reviewOff]}>Review</Text>
+          </TouchableOpacity>
           <TouchableOpacity onPress={handleTogglePlan}>
             <Text style={[styles.planText, !planMode && styles.planOff]}>Plan</Text>
           </TouchableOpacity>
@@ -518,6 +551,7 @@ export function VoiceScreen({ onLeaveSession }: Props) {
             onSelectAll={() => handleOptionSelect('all')}
           />
         )}
+        {(uiState === 'processing' || uiState === 'transcribing') && <MiniGame />}
         <TranscriptDisplay
           conversation={conversation}
           isCompact={isCompact}
@@ -564,6 +598,8 @@ const styles = StyleSheet.create({
   headerRight: { flexDirection: 'row', gap: 8, alignItems: 'center', justifyContent: 'flex-end' },
   ctxText: { color: '#445', fontSize: 11, fontWeight: '600', minWidth: 24, textAlign: 'right' },
   ctxWarn: { color: '#ff8800' },
+  reviewText: { color: '#ffdd44', fontSize: 11, fontWeight: '600' },
+  reviewOff: { color: '#556' },
   planText: { color: '#00ff88', fontSize: 11, fontWeight: '600' },
   planOff: { color: '#556' },
   modelText: { color: '#ffaa00', fontSize: 11, fontWeight: '600' },
