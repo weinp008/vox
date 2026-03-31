@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sonar — Voice Interface for Claude Code</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  :root { --bg: #111; --surface: #191919; --border: #2a2a2a; --text: #d4d4d4; --muted: #666; --accent: #a78bfa; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Inter', system-ui, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; font-size: 15px; line-height: 1.7; }
+  code { font-family: 'SF Mono', 'Fira Code', 'JetBrains Mono', monospace; font-size: 13px; background: var(--surface); padding: 2px 6px; border-radius: 3px; color: var(--accent); }
+
+  .container { max-width: 640px; margin: 0 auto; padding: 80px 24px; }
+
+  /* Hero */
+  .hero { margin-bottom: 64px; }
+  .hero-title { font-size: 14px; font-weight: 500; letter-spacing: 6px; text-transform: uppercase; color: var(--muted); margin-bottom: 8px; }
+  .hero-subtitle { font-size: 22px; font-weight: 400; color: var(--text); line-height: 1.4; }
+  .hero-subtitle em { font-style: normal; color: var(--accent); }
+  .hero-desc { color: var(--muted); margin-top: 16px; font-size: 14px; }
+
+  /* Features */
+  .features { margin-bottom: 64px; }
+  .section-label { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 1.5px; margin-bottom: 20px; }
+  .feature { padding: 16px 0; border-bottom: 1px solid var(--border); }
+  .feature:first-of-type { border-top: 1px solid var(--border); }
+  .feature-name { color: var(--text); font-weight: 500; font-size: 14px; margin-bottom: 4px; }
+  .feature-desc { color: var(--muted); font-size: 13px; }
+
+  /* Setup */
+  .setup { margin-bottom: 64px; }
+  .step { display: flex; gap: 16px; padding: 12px 0; }
+  .step-num { color: var(--accent); font-family: 'SF Mono', monospace; font-size: 13px; flex-shrink: 0; width: 20px; text-align: right; }
+  .step-text { color: var(--text); font-size: 14px; }
+  .step-code { display: block; margin-top: 6px; color: var(--muted); font-family: 'SF Mono', monospace; font-size: 12px; }
+
+  /* Links */
+  .links { display: flex; gap: 16px; align-items: center; }
+  .link-primary { display: inline-block; color: var(--accent); border: 1px solid var(--accent); border-radius: 4px; padding: 10px 24px; font-weight: 500; font-size: 13px; text-decoration: none; letter-spacing: 0.5px; transition: background 0.15s; }
+  .link-primary:hover { background: rgba(167,139,250,0.1); }
+  .link-secondary { color: var(--muted); font-size: 13px; text-decoration: none; }
+  .link-secondary:hover { color: var(--text); }
+
+  .footer { margin-top: 80px; padding-top: 20px; border-top: 1px solid var(--border); color: #333; font-size: 11px; font-family: 'SF Mono', monospace; }
+</style>
+</head>
+<body>
+<div class="container">
+
+  <div class="hero">
+    <div class="hero-title">Sonar</div>
+    <div class="hero-subtitle"><em>Voice interface</em> for Claude Code</div>
+    <div class="hero-desc">Talk to your codebase. Sonar connects voice input to Claude Code, giving you a real-time conversational interface for coding tasks.</div>
+  </div>
+
+  <div class="features">
+    <div class="section-label">Features</div>
+    <div class="feature">
+      <div class="feature-name">Voice-driven coding</div>
+      <div class="feature-desc">Speak naturally to describe tasks, ask questions, or give instructions. Sonar transcribes and routes to Claude Code with full tool access.</div>
+    </div>
+    <div class="feature">
+      <div class="feature-name">Real-time activity</div>
+      <div class="feature-desc">Watch what Claude is doing as it works. Live activity feed shows file reads, edits, and command execution in real time.</div>
+    </div>
+    <div class="feature">
+      <div class="feature-name">Session persistence</div>
+      <div class="feature-desc">Sessions are saved and resumable. Switch between projects, pick up where you left off, and maintain full conversation history.</div>
+    </div>
+  </div>
+
+  <div class="setup">
+    <div class="section-label">Setup</div>
+    <div class="step">
+      <div class="step-num">1</div>
+      <div class="step-text">Clone the repository<span class="step-code">git clone https://github.com/anthropics/sonar.git</span></div>
+    </div>
+    <div class="step">
+      <div class="step-num">2</div>
+      <div class="step-text">Install dependencies<span class="step-code">cd sonar/backend && pip install -r requirements.txt</span></div>
+    </div>
+    <div class="step">
+      <div class="step-num">3</div>
+      <div class="step-text">Configure environment<span class="step-code">cp .env.example .env && edit .env with your API keys</span></div>
+    </div>
+    <div class="step">
+      <div class="step-num">4</div>
+      <div class="step-text">Run the server<span class="step-code">uvicorn app.main:app --reload</span></div>
+    </div>
+  </div>
+
+  <div class="links">
+    <a href="/app" class="link-primary">Open Sonar</a>
+    <a href="https://github.com/anthropics/sonar" class="link-secondary">GitHub &rarr;</a>
+  </div>
+
+  <div class="footer">sonar &middot; voice interface for claude code</div>
+
+</div>
+</body>
+</html>

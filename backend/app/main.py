@@ -41,6 +41,12 @@ app.add_middleware(
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "..", "static")
 
 
+@app.get("/health")
+async def health():
+    """Simple health check so the mobile app can verify connectivity."""
+    return {"ok": True}
+
+
 @app.get("/")
 async def root():
     return FileResponse(os.path.join(STATIC_DIR, "landing.html"))
