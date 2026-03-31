@@ -4,13 +4,15 @@ import { ConversationEntry, PromptResponse, SessionState, UIState } from '../typ
 interface SessionContextValue {
   sessionId: string | null;
   projectName: string | null;
+  branch: string | null;
   conversation: ConversationEntry[];
   lastResponse: PromptResponse | null;
   uiState: UIState;
   isCompact: boolean;
   ttsEnabled: boolean;
   messageQueue: string[];
-  setSession: (id: string, name: string) => void;
+  setSession: (id: string, name: string, branch?: string) => void;
+  setBranch: (branch: string) => void;
   /** Restore conversation from a resumed session. */
   restoreConversation: (messages: { role: string; content: string }[]) => void;
   addUserMessage: (text: string) => string;
@@ -30,6 +32,7 @@ let entryCounter = 0;
 export function SessionProvider({ children }: { children: ReactNode }) {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [projectName, setProjectName] = useState<string | null>(null);
+  const [branch, setBranch] = useState<string | null>(null);
   const [conversation, setConversation] = useState<ConversationEntry[]>([]);
   const [lastResponse, setLastResponse] = useState<PromptResponse | null>(null);
   const [uiState, setUIState] = useState<UIState>('idle');
@@ -37,9 +40,10 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const [ttsEnabled, setTtsEnabled] = useState(true);
   const [messageQueue, setMessageQueue] = useState<string[]>([]);
 
-  function setSession(id: string, name: string) {
+  function setSession(id: string, name: string, b?: string) {
     setSessionId(id);
     setProjectName(name);
+    setBranch(b ?? null);
     setConversation([]);
     setLastResponse(null);
   }
@@ -115,6 +119,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   function clearSession() {
     setSessionId(null);
     setProjectName(null);
+    setBranch(null);
     setConversation([]);
     setLastResponse(null);
     setUIState('idle');
@@ -125,9 +130,9 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   return (
     <SessionContext.Provider
       value={{
-        sessionId, projectName, conversation, lastResponse, uiState, isCompact, ttsEnabled,
+        sessionId, projectName, branch, conversation, lastResponse, uiState, isCompact, ttsEnabled,
         messageQueue,
-        setSession, restoreConversation, addUserMessage, setEntryResponse, setUIState,
+        setSession, setBranch, restoreConversation, addUserMessage, setEntryResponse, setUIState,
         toggleCompact, toggleTTS, clearSession, enqueueMessage, dequeueMessage,
       }}
     >

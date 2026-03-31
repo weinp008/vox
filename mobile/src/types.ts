@@ -5,6 +5,7 @@ export type UIState = 'idle' | 'recording' | 'transcribing' | 'processing' | 'li
 export interface StartSessionResponse {
   session_id: string;
   project_name: string;
+  branch?: string;
   files: string[];
   recent_commits: string[];
 }

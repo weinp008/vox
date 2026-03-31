@@ -4,6 +4,8 @@ import base64
 import os
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -28,11 +30,18 @@ app = FastAPI(title="Sonar", description="Navigate code by voice")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Tighten for production
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+STATIC_DIR = os.path.join(os.path.dirname(__file__), "..", "static")
+
+
+@app.get("/")
+async def root():
+    return FileResponse(os.path.join(STATIC_DIR, "index.html"))
 
 
 class SessionSummary(BaseModel):
@@ -48,6 +57,7 @@ class SessionSummary(BaseModel):
 class ResumeSessionResponse(BaseModel):
     session_id: str
     project_name: str
+    branch: str = ""
     files: list[str]
     recent_commits: list[str]
     conversation: list[dict]
@@ -71,6 +81,7 @@ async def start_session(req: StartSessionRequest):
     return StartSessionResponse(
         session_id=session.id,
         project_name=session.project_name,
+        branch=getattr(session, 'current_branch', ''),
         files=session.files[:50],
         recent_commits=session.recent_commits,
     )
@@ -86,6 +97,7 @@ async def resume_session(session_id: str):
     return ResumeSessionResponse(
         session_id=session.id,
         project_name=session.project_name,
+        branch=getattr(session, 'current_branch', ''),
         files=session.files[:50],
         recent_commits=session.recent_commits,
         conversation=session.conversation,
@@ -105,6 +117,54 @@ async def rename_session(session_id: str, req: RenameSessionRequest):
     session.project_name = req.name
     session._save()
     return {"ok": True, "name": req.name}
+
+
+@app.get("/session/{session_id}/branches")
+async def list_branches(session_id: str):
+    """List all local git branches for the session's project."""
+    import subprocess as _sp
+    session = get_session(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    try:
+        result = _sp.run(
+            ["git", "branch", "--format=%(refname:short)"],
+            cwd=session.project_path, capture_output=True, text=True, timeout=5,
+        )
+        branches = [b.strip() for b in result.stdout.strip().splitlines() if b.strip()]
+        current = getattr(session, 'current_branch', '')
+        return {"branches": branches, "current": current}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class SwitchBranchRequest(BaseModel):
+    branch: str
+    create: bool = False
+
+
+@app.post("/session/{session_id}/branch")
+async def switch_branch(session_id: str, req: SwitchBranchRequest):
+    """Switch to an existing branch or create a new one."""
+    import subprocess as _sp
+    session = get_session(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    try:
+        if req.create:
+            cmd = ["git", "checkout", "-b", req.branch]
+        else:
+            cmd = ["git", "checkout", req.branch]
+        result = _sp.run(cmd, cwd=session.project_path, capture_output=True, text=True, timeout=10)
+        if result.returncode != 0:
+            raise HTTPException(status_code=400, detail=result.stderr.strip() or "git checkout failed")
+        session.current_branch = req.branch
+        session._save()
+        return {"ok": True, "branch": req.branch}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.post("/session/{session_id}/star")

@@ -203,6 +203,24 @@ export async function starSession(sessionId: string): Promise<{ starred: boolean
   return res.json();
 }
 
+export async function listBranches(sessionId: string): Promise<{ branches: string[]; current: string }> {
+  const res = await fetch(`${BASE_URL}/session/${sessionId}/branches`);
+  return res.json();
+}
+
+export async function switchBranch(sessionId: string, branch: string, create = false): Promise<{ branch: string }> {
+  const res = await fetch(`${BASE_URL}/session/${sessionId}/branch`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ branch, create }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail ?? 'Branch switch failed');
+  }
+  return res.json();
+}
+
 export async function renameSession(sessionId: string, name: string): Promise<void> {
   await fetch(`${BASE_URL}/session/${sessionId}/rename`, {
     method: 'POST',

@@ -3,7 +3,7 @@ import { ActionSheetIOS, Alert, Platform, SafeAreaView, StyleSheet, Text, Toucha
 
 import * as Clipboard from 'expo-clipboard';
 import * as ImagePicker from 'expo-image-picker';
-import { transcribeAudio, sendText, sendImage, requestTTS, updateSettings, getSettings, renameSession, getActivity, compactSession, clearContext, getLastResponse, resumeSession, SonarSettings } from '../api';
+import { transcribeAudio, sendText, sendImage, requestTTS, updateSettings, getSettings, renameSession, getActivity, compactSession, clearContext, getLastResponse, resumeSession, listBranches, switchBranch, SonarSettings } from '../api';
 import { DiffDisplay } from '../components/DiffDisplay';
 import { OptionsDisplay } from '../components/OptionsDisplay';
 import { RecordButton } from '../components/RecordButton';
@@ -22,7 +22,7 @@ interface Props {
 
 export function VoiceScreen({ onLeaveSession, onOpenGames, onClaudeStatusChange }: Props) {
   const {
-    sessionId, projectName, conversation, lastResponse, uiState, isCompact, ttsEnabled,
+    sessionId, projectName, branch, setBranch, conversation, lastResponse, uiState, isCompact, ttsEnabled,
     addUserMessage, setEntryResponse, setUIState, toggleCompact, toggleTTS, clearSession,
     messageQueue, enqueueMessage, dequeueMessage, restoreConversation,
   } = useSession();
@@ -342,6 +342,43 @@ export function VoiceScreen({ onLeaveSession, onOpenGames, onClaudeStatusChange 
     }
   }
 
+  async function handleBranchSwitch() {
+    if (!sessionId) return;
+    try {
+      const { branches, current } = await listBranches(sessionId);
+      const options = [...branches, '+ New branch', 'Cancel'];
+      ActionSheetIOS.showActionSheetWithOptions(
+        { title: `Current branch: ${current || 'unknown'}`, options, cancelButtonIndex: options.length - 1 },
+        async (index) => {
+          if (index === options.length - 1) return; // Cancel
+          if (index === options.length - 2) {
+            // New branch
+            Alert.prompt('New branch', 'Enter branch name:', async (name) => {
+              if (!name?.trim()) return;
+              try {
+                await switchBranch(sessionId, name.trim(), true);
+                setBranch(name.trim());
+              } catch (e: any) {
+                Alert.alert('Error', e.message ?? 'Could not create branch');
+              }
+            }, 'plain-text', `feature/`);
+          } else {
+            const target = branches[index];
+            if (target === current) return;
+            try {
+              await switchBranch(sessionId, target);
+              setBranch(target);
+            } catch (e: any) {
+              Alert.alert('Error', e.message ?? 'Could not switch branch');
+            }
+          }
+        },
+      );
+    } catch (e: any) {
+      Alert.alert('Error', e.message ?? 'Could not load branches');
+    }
+  }
+
   function handleRename() {
     Alert.prompt('Rename session', 'Enter a name:', (name) => {
       if (name?.trim()) {
@@ -507,9 +544,12 @@ export function VoiceScreen({ onLeaveSession, onOpenGames, onClaudeStatusChange 
           <Text style={styles.backText}>← Back</Text>
         </TouchableOpacity>
         <TouchableOpacity onPress={handleRename} style={styles.nameBtn}>
-          <Text style={styles.projectName} numberOfLines={1}>
-            {displayName}
-          </Text>
+          <Text style={styles.projectName} numberOfLines={1}>{displayName}</Text>
+          {branch ? (
+            <TouchableOpacity onPress={handleBranchSwitch}>
+              <Text style={styles.branchName} numberOfLines={1}>⎇ {branch}</Text>
+            </TouchableOpacity>
+          ) : null}
         </TouchableOpacity>
         <View style={styles.headerRight}>
           <TouchableOpacity onPress={handleSettings} style={styles.gearBtn}>
@@ -592,6 +632,7 @@ const styles = StyleSheet.create({
   backText: { color: '#00d4ff', fontSize: 14 },
   nameBtn: { flex: 1 },
   projectName: { color: '#eef', fontWeight: '600', fontSize: 16, textAlign: 'center' },
+  branchName: { color: '#445', fontSize: 11, textAlign: 'center', marginTop: 1 },
   headerRight: { alignItems: 'center', justifyContent: 'flex-end' },
   gearBtn: { padding: 4 },
   gearText: { color: '#556', fontSize: 18 },

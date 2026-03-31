@@ -130,7 +130,7 @@ export function ProjectSelectScreen({ onSessionStarted }: Props) {
     setLoading(true);
     try {
       const res = await startSession(trimmed);
-      setSession(res.session_id, res.project_name);
+      setSession(res.session_id, res.project_name, res.branch);
       onSessionStarted();
     } catch (e: any) {
       Alert.alert('Error', e.message ?? 'Could not start session');
@@ -143,7 +143,7 @@ export function ProjectSelectScreen({ onSessionStarted }: Props) {
     setLoading(true);
     try {
       const res = await resumeSession(sessionId);
-      setSession(res.session_id, res.project_name);
+      setSession(res.session_id, res.project_name, res.branch);
       restoreConversation(res.conversation);
       onSessionStarted();
     } catch (e: any) {

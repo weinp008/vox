@@ -39,6 +39,7 @@ class StartSessionRequest(BaseModel):
 class StartSessionResponse(BaseModel):
     session_id: str
     project_name: str
+    branch: str = ""
     files: List[str]
     recent_commits: List[str]
 
