@@ -7,7 +7,7 @@ import { transcribeAudio, sendText, sendImage, requestTTS, updateSettings, getSe
 import { DiffDisplay } from '../components/DiffDisplay';
 import { OptionsDisplay } from '../components/OptionsDisplay';
 import { RecordButton } from '../components/RecordButton';
-import { MiniGame } from '../components/MiniGame';
+import { ReviewModal } from '../components/ReviewModal';
 import { TranscriptDisplay } from '../components/TranscriptDisplay';
 import { useSession } from '../context/SessionContext';
 import { useAudioPlayer } from '../hooks/useAudioPlayer';
@@ -233,19 +233,28 @@ export function VoiceScreen({ onLeaveSession, onOpenGames, onClaudeStatusChange 
     }
   }
 
+  const [reviewText, setReviewText] = useState('');
+  const [reviewVisible, setReviewVisible] = useState(false);
+  const reviewResolveRef = useRef<((text: string | null) => void) | null>(null);
+
   function reviewTranscript(transcript: string): Promise<string | null> {
     return new Promise((resolve) => {
-      Alert.prompt(
-        'Review before sending',
-        'Edit your message or tap Send to confirm.',
-        [
-          { text: 'Cancel', style: 'cancel', onPress: () => resolve(null) },
-          { text: 'Send', onPress: (text) => resolve(text?.trim() || transcript) },
-        ],
-        'plain-text',
-        transcript,
-      );
+      setReviewText(transcript);
+      reviewResolveRef.current = resolve;
+      setReviewVisible(true);
     });
+  }
+
+  function handleReviewSend(text: string) {
+    setReviewVisible(false);
+    reviewResolveRef.current?.(text);
+    reviewResolveRef.current = null;
+  }
+
+  function handleReviewCancel() {
+    setReviewVisible(false);
+    reviewResolveRef.current?.(null);
+    reviewResolveRef.current = null;
   }
 
   async function handlePressOut() {
@@ -487,6 +496,10 @@ export function VoiceScreen({ onLeaveSession, onOpenGames, onClaudeStatusChange 
     lastResponse?.response_type === 'options' && lastResponse.options && lastResponse.options.length > 0;
   const pendingDiff = lastResponse?.pending_diff ?? null;
 
+  const CTX_MAX = 200000;
+  const ctxPct = Math.min(contextTokens / CTX_MAX, 1);
+  const ctxBarColor = ctxPct < 0.5 ? '#00ff88' : ctxPct < 0.75 ? '#ffdd44' : ctxPct < 0.9 ? '#ff8800' : '#ff3333';
+
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
@@ -504,6 +517,12 @@ export function VoiceScreen({ onLeaveSession, onOpenGames, onClaudeStatusChange 
           </TouchableOpacity>
         </View>
       </View>
+
+      <TouchableOpacity onPress={handleSettings} activeOpacity={0.7}>
+        <View style={styles.ctxBarTrack}>
+          <View style={[styles.ctxBarFill, { width: `${ctxPct * 100}%` as any, backgroundColor: ctxBarColor }]} />
+        </View>
+      </TouchableOpacity>
 
       <View style={styles.body}>
         {pendingDiff && (
@@ -549,6 +568,13 @@ export function VoiceScreen({ onLeaveSession, onOpenGames, onClaudeStatusChange 
           onImageAttach={handleImageAttach}
         />
       </View>
+
+      <ReviewModal
+        visible={reviewVisible}
+        initialText={reviewText}
+        onSend={handleReviewSend}
+        onCancel={handleReviewCancel}
+      />
     </SafeAreaView>
   );
 }
@@ -561,8 +587,6 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: 16,
     paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#0e1628',
   },
   backBtn: { width: 50 },
   backText: { color: '#00d4ff', fontSize: 14 },
@@ -571,6 +595,8 @@ const styles = StyleSheet.create({
   headerRight: { alignItems: 'center', justifyContent: 'flex-end' },
   gearBtn: { padding: 4 },
   gearText: { color: '#556', fontSize: 18 },
+  ctxBarTrack: { height: 3, backgroundColor: '#0e1628', width: '100%' },
+  ctxBarFill: { height: 3 },
   gamesPrompt: {
     alignSelf: 'center',
     backgroundColor: '#0e1628',
