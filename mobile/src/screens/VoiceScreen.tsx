@@ -3,7 +3,7 @@ import { ActionSheetIOS, Alert, Platform, SafeAreaView, StyleSheet, Text, Toucha
 
 import * as Clipboard from 'expo-clipboard';
 import * as ImagePicker from 'expo-image-picker';
-import { transcribeAudio, sendText, sendImage, requestTTS, updateSettings, getSettings, renameSession, getActivity, compactSession, clearContext, getLastResponse, SonarSettings } from '../api';
+import { transcribeAudio, sendText, sendImage, requestTTS, updateSettings, getSettings, renameSession, getActivity, compactSession, clearContext, getLastResponse, resumeSession, SonarSettings } from '../api';
 import { DiffDisplay } from '../components/DiffDisplay';
 import { OptionsDisplay } from '../components/OptionsDisplay';
 import { RecordButton } from '../components/RecordButton';
@@ -20,7 +20,7 @@ export function VoiceScreen({ onLeaveSession }: Props) {
   const {
     sessionId, projectName, conversation, lastResponse, uiState, isCompact, ttsEnabled,
     addUserMessage, setEntryResponse, setUIState, toggleCompact, toggleTTS, clearSession,
-    messageQueue, enqueueMessage, dequeueMessage,
+    messageQueue, enqueueMessage, dequeueMessage, restoreConversation,
   } = useSession();
 
   const handlePlaybackFinished = useCallback(() => {
@@ -448,6 +448,16 @@ export function VoiceScreen({ onLeaveSession }: Props) {
     await speakError('Nothing in clipboard');
   }
 
+  async function handleRefresh() {
+    if (!sessionId) return;
+    try {
+      const res = await resumeSession(sessionId);
+      restoreConversation(res.conversation);
+    } catch {
+      // Silently fail — conversation stays as-is
+    }
+  }
+
   function handleLeave() {
     clearSession();
     onLeaveSession();
@@ -517,6 +527,7 @@ export function VoiceScreen({ onLeaveSession }: Props) {
           onAskClaude={handleAskClaude}
           onToggleCompact={toggleCompact}
           onResendPrompt={handleResendPrompt}
+          onRefresh={handleRefresh}
         />
       </View>
 

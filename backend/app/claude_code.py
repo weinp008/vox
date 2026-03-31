@@ -15,7 +15,7 @@ class ClaudeCodeSettings:
     effort: str = "low"  # low, medium, high, max
     allowed_tools: list[str] = field(default_factory=lambda: ["Read", "Grep", "Glob", "Bash", "Edit", "Write"])
     plan_mode: bool = False
-    mobile_mode: MobileMode = MobileMode.DIFF_ONLY
+    mobile_mode: MobileMode = MobileMode.DIFF_WITH_ACCEPT
 
 
 # Global settings — updated via /settings endpoint
@@ -144,6 +144,14 @@ def run_compact(cwd: str, cc_session_id: str) -> tuple[str, str | None]:
     return text, new_sid
 
 
+def git_stash(cwd: str) -> bool:
+    try:
+        r = subprocess.run(["git", "stash"], cwd=cwd, capture_output=True, text=True, timeout=10)
+        return r.returncode == 0 and "No local changes" not in r.stdout
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        return False
+
+
 def git_stash_pop(cwd: str) -> bool:
     try:
         r = subprocess.run(["git", "stash", "pop"], cwd=cwd, capture_output=True, text=True, timeout=10)
@@ -186,5 +194,10 @@ async def get_claude_code_response(
 
     from app.llm import _parse_response
     response_type, options, diff = _parse_response(response_text)
+
+    # In diff_with_accept mode: stash changes so the working tree is clean
+    # until the user explicitly confirms. On SEND → pop, on CANCEL → drop.
+    if diff and current_settings.mobile_mode in (MobileMode.DIFF_WITH_ACCEPT,):
+        git_stash(session.project_path)
 
     return response_text, response_type, options, diff

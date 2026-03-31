@@ -4,6 +4,7 @@ import {
   ActivityIndicator,
   Platform,
   Pressable,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -24,6 +25,7 @@ interface Props {
   onAskClaude: (text: string) => void;
   onToggleCompact: () => void;
   onResendPrompt: (text: string) => void;
+  onRefresh: () => Promise<void>;
 }
 
 function splitIntoParagraphs(text: string): string[] {
@@ -63,12 +65,19 @@ function HighlightedText({ text, highlightIndex, style }: { text: string; highli
 
 export function TranscriptDisplay({
   conversation, isCompact, readingWordIndex, readingEntryId,
-  onReadAloud, onAskClaude, onToggleCompact, onResendPrompt,
+  onReadAloud, onAskClaude, onToggleCompact, onResendPrompt, onRefresh,
 }: Props) {
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+  const [refreshing, setRefreshing] = useState(false);
   const scrollRef = useRef<ScrollView>(null);
   const lastTapRef = useRef<number>(0);
+
+  async function handleRefresh() {
+    setRefreshing(true);
+    await onRefresh();
+    setRefreshing(false);
+  }
 
   function toggleExpand(entryId: string) {
     setExpandedIds((prev) => {
@@ -117,7 +126,19 @@ export function TranscriptDisplay({
   }
 
   return (
-    <ScrollView ref={scrollRef} style={styles.container} contentContainerStyle={styles.content}>
+    <ScrollView
+      ref={scrollRef}
+      style={styles.container}
+      contentContainerStyle={styles.content}
+      refreshControl={
+        <RefreshControl
+          refreshing={refreshing}
+          onRefresh={handleRefresh}
+          tintColor="#00d4ff"
+          colors={['#00d4ff']}
+        />
+      }
+    >
       {conversation.length > 2 && (
         <TouchableOpacity onPress={onToggleCompact} style={styles.compactToggle}>
           <Text style={styles.compactToggleText}>

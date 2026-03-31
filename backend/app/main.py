@@ -112,7 +112,7 @@ class SettingsResponse(BaseModel):
     allowed_tools: list[str]
     use_claude_code: bool
     plan_mode: bool = False
-    mobile_mode: MobileMode = MobileMode.DIFF_ONLY
+    mobile_mode: MobileMode = MobileMode.DIFF_WITH_ACCEPT
 
 
 class UpdateSettingsRequest(BaseModel):
@@ -430,6 +430,8 @@ async def _process_respond(session, transcript: str, tts: bool = True) -> Prompt
 
     # 3. Handle command
     if command == CommandType.ABORT:
+        if session.pending_diff:
+            cc.git_stash_drop(session.project_path)
         session.pending_diff = None
         session.state = SessionState.IDLE
         response_text = "Cancelled. What would you like to do next?"
@@ -465,20 +467,18 @@ async def _process_respond(session, transcript: str, tts: bool = True) -> Prompt
             session.state = SessionState.IDLE
             mode = cc.current_settings.mobile_mode
 
-            if mode == MobileMode.DIFF_ONLY:
-                # Original behaviour: hand the diff back for manual application
+            if mode == MobileMode.DIFF_WITH_ACCEPT:
+                # Changes are stashed — pop to restore them to disk
+                popped = cc.git_stash_pop(session.project_path)
+                response_text = "Changes applied." if popped else "Applied. (Note: stash pop had an issue — changes may already be on disk.)"
+            elif mode == MobileMode.PURE_VIBE:
+                # pure_vibe never stashes — changes already on disk
+                response_text = "Done."
+            else:
+                # diff_only: hand back raw diff for manual application
                 response_text = (
                     f"Here's the diff to apply:\n\n{diff_to_apply}\n\n"
                     "Copy this to your editor to apply. Session ready for next task."
-                )
-            elif mode in (MobileMode.DIFF_WITH_ACCEPT, MobileMode.PURE_VIBE):
-                # Apply changes to disk via Claude Code, then report back
-                apply_result = await _apply_changes_to_disk(session, diff_to_apply)
-                response_text = f"Done. {apply_result}"
-            else:
-                response_text = (
-                    f"Here's the diff to apply:\n\n{diff_to_apply}\n\n"
-                    "Copy this to your editor to apply."
                 )
         else:
             response_text = "No pending changes to send. What would you like to work on?"
