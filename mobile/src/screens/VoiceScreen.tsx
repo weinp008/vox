@@ -3,7 +3,7 @@ import { ActionSheetIOS, Alert, Platform, SafeAreaView, StyleSheet, Text, Toucha
 
 import * as Clipboard from 'expo-clipboard';
 import * as ImagePicker from 'expo-image-picker';
-import { transcribeAudio, sendText, sendImage, requestTTS, updateSettings, getSettings, renameSession, getActivity, compactSession, clearContext, getLastResponse, resumeSession, listBranches, switchBranch, SonarSettings, OnRetryCallback } from '../api';
+import { transcribeAudio, sendText, sendImage, requestTTS, updateSettings, getSettings, renameSession, getActivity, compactSession, clearContext, getLastResponse, resumeSession, listBranches, switchBranch, VoxSettings, OnRetryCallback } from '../api';
 import { DiffDisplay } from '../components/DiffDisplay';
 import { OptionsDisplay } from '../components/OptionsDisplay';
 import { RecordButton } from '../components/RecordButton';
@@ -40,7 +40,7 @@ export function VoiceScreen({ onLeaveSession, onOpenGames, onClaudeStatusChange 
   const [readingEntryId, setReadingEntryId] = useState<string | null>(null);
   const [currentModel, setCurrentModel] = useState('sonnet');
   const [planMode, setPlanMode] = useState(false);
-  const [mobileMode, setMobileMode] = useState<SonarSettings['mobile_mode']>('diff_only');
+  const [mobileMode, setMobileMode] = useState<VoxSettings['mobile_mode']>('diff_only');
   const [reviewMode, setReviewMode] = useState(false);
   const [displayName, setDisplayName] = useState(projectName);
   const [contextTokens, setContextTokens] = useState(0);
@@ -427,7 +427,7 @@ export function VoiceScreen({ onLeaveSession, onOpenGames, onClaudeStatusChange 
         } else if (index === 1) {
           ActionSheetIOS.showActionSheetWithOptions(
             { title: `Apply mode: ${modeLabel}`, options: ['Diff only (copy manually)', 'Diff + accept (tap to apply)', 'Pure vibe (auto-apply)', 'Cancel'], cancelButtonIndex: 3 },
-            (i) => { const modes: SonarSettings['mobile_mode'][] = ['diff_only', 'diff_with_accept', 'pure_vibe']; if (i < 3) { setMobileMode(modes[i]); updateSettings({ mobile_mode: modes[i] }); } },
+            (i) => { const modes: VoxSettings['mobile_mode'][] = ['diff_only', 'diff_with_accept', 'pure_vibe']; if (i < 3) { setMobileMode(modes[i]); updateSettings({ mobile_mode: modes[i] }); } },
           );
         } else if (index === 2) {
           toggleTTS();
@@ -508,7 +508,7 @@ export function VoiceScreen({ onLeaveSession, onOpenGames, onClaudeStatusChange 
     const img = await Clipboard.getImageAsync({ format: 'jpeg' });
     if (img?.data) {
       const { FileSystem } = await import('expo-file-system');
-      const path = FileSystem.cacheDirectory + 'sonar_paste.jpg';
+      const path = FileSystem.cacheDirectory + 'vox_paste.jpg';
       await FileSystem.writeAsStringAsync(path, img.data, {
         encoding: FileSystem.EncodingType.Base64,
       });

@@ -7,7 +7,7 @@ export let BASE_URL = DEFAULT_URL;
 /** Load saved server URL from storage. Call once on app start. */
 export async function loadBaseUrl(): Promise<string> {
   try {
-    const saved = await AsyncStorage.getItem('sonar_base_url');
+    const saved = await AsyncStorage.getItem('vox_base_url');
     if (saved) BASE_URL = saved;
   } catch {}
   return BASE_URL;
@@ -19,7 +19,7 @@ export async function setBaseUrl(url: string): Promise<void> {
   let clean = url.trim().replace(/\/+$/, '');
   if (clean && !clean.startsWith('http')) clean = 'http://' + clean;
   BASE_URL = clean || DEFAULT_URL;
-  await AsyncStorage.setItem('sonar_base_url', BASE_URL);
+  await AsyncStorage.setItem('vox_base_url', BASE_URL);
 }
 
 /** Fetch with timeout (default 120s for Claude Code calls).
@@ -229,7 +229,7 @@ export async function getActivity(sessionId: string): Promise<string[]> {
   }
 }
 
-export interface SonarSettings {
+export interface VoxSettings {
   model: string;
   effort: string;
   allowed_tools: string[];
@@ -238,12 +238,12 @@ export interface SonarSettings {
   mobile_mode: 'diff_only' | 'diff_with_accept' | 'pure_vibe';
 }
 
-export async function getSettings(): Promise<SonarSettings> {
+export async function getSettings(): Promise<VoxSettings> {
   const res = await fetch(`${BASE_URL}/settings`);
   return res.json();
 }
 
-export async function updateSettings(updates: Partial<Pick<SonarSettings, 'model' | 'effort' | 'plan_mode' | 'mobile_mode'>>): Promise<SonarSettings> {
+export async function updateSettings(updates: Partial<Pick<VoxSettings, 'model' | 'effort' | 'plan_mode' | 'mobile_mode'>>): Promise<VoxSettings> {
   const res = await fetch(`${BASE_URL}/settings`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

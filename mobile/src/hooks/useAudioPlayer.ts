@@ -47,7 +47,7 @@ export function useAudioPlayer(onFinish: () => void) {
 
     lastBase64Ref.current = base64;
 
-    const path = FileSystem.cacheDirectory + 'sonar_tts.mp3';
+    const path = FileSystem.cacheDirectory + 'vox_tts.mp3';
     await FileSystem.writeAsStringAsync(path, base64, {
       encoding: FileSystem.EncodingType.Base64,
     });

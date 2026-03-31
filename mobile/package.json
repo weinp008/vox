@@ -1,5 +1,5 @@
 {
-  "name": "sonar-mobile",
+  "name": "vox-mobile",
   "version": "1.0.0",
   "main": "expo/AppEntry",
   "scripts": {

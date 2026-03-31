@@ -194,7 +194,7 @@ export function ProjectSelectScreen({ onSessionStarted }: Props) {
   return (
     <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.container}>
       <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
-        <Text style={styles.title}>SONAR</Text>
+        <Text style={styles.title}>VOX</Text>
         <Text style={styles.subtitle}>Navigate code by voice</Text>
 
         {backendReachable === false && (

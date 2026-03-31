@@ -28,7 +28,7 @@ from app.session import create_session, get_session, list_sessions
 from app.transcription import transcribe_audio
 from app.tts import generate_speech
 
-app = FastAPI(title="Sonar", description="Navigate code by voice")
+app = FastAPI(title="Vox", description="Navigate code by voice")
 
 app.add_middleware(
     CORSMiddleware,
@@ -412,7 +412,7 @@ async def prompt_image(
     # Save image to temp file
     image_bytes = await image.read()
     suffix = os.path.splitext(image.filename or "image.png")[1] or ".png"
-    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=suffix, prefix="sonar_img_")
+    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=suffix, prefix="vox_img_")
     tmp.write(image_bytes)
     tmp.close()
 

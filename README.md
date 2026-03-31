@@ -1,10 +1,10 @@
-# Sonar
+# Vox
 
 Voice interface for [Claude Code](https://docs.anthropic.com/en/docs/claude-code). Talk to your codebase from your phone, browser, or anywhere.
 
 ## What it does
 
-Sonar wraps Claude Code CLI with a voice and text interface. You speak (or type), it transcribes, sends to Claude Code running on your machine, and streams the response back. Claude Code does the actual work — reading files, editing code, running commands.
+Vox wraps Claude Code CLI with a voice and text interface. You speak (or type), it transcribes, sends to Claude Code running on your machine, and streams the response back. Claude Code does the actual work — reading files, editing code, running commands.
 
 **Web client** works in any browser. **Mobile app** (React Native/Expo) for iOS/Android.
 
@@ -39,7 +39,7 @@ Open `http://localhost:8000` in your browser.
 ## How it works
 
 ```
-Phone/Browser → Sonar backend → Claude Code CLI → your codebase
+Phone/Browser → Vox backend → Claude Code CLI → your codebase
 ```
 
 1. You speak or type a prompt
@@ -62,7 +62,7 @@ Phone/Browser → Sonar backend → Claude Code CLI → your codebase
 
 ## Remote access
 
-Install [Tailscale](https://tailscale.com) on your computer and phone. Your computer gets a stable IP (e.g. `100.x.y.z`). Access Sonar from anywhere at `http://100.x.y.z:8000/app`.
+Install [Tailscale](https://tailscale.com) on your computer and phone. Your computer gets a stable IP (e.g. `100.x.y.z`). Access Vox from anywhere at `http://100.x.y.z:8000/app`.
 
 ## Project structure
 

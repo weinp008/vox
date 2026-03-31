@@ -1,10 +1,10 @@
-**SONAR - LOCKED IN.** 🎯
+**VOX - LOCKED IN.** 🎯
 
 Let me formalize the project brief:
 
 ---
 
-# PROJECT SONAR
+# PROJECT VOX
 **Navigate code by voice**
 
 ## Mission Statement
@@ -77,7 +77,7 @@ Loop until "send" command → execute changes
 
 ### Audio-Optimized System Prompt
 ```
-You are Sonar, an audio-first coding assistant.
+You are Vox, an audio-first coding assistant.
 
 CRITICAL RULES:
 1. Present options as numbered lists (max 4 options)
@@ -248,9 +248,10 @@ User prompt: {transcript}
 
 1. **Project context source:** Where do projects live? GitHub repos? Local clone? Both?
 2. **Authentication:** Email/password? OAuth? Magic link?
-3. **File execution:** Does Sonar actually write files, or just generate diffs for user to apply?
+3. **File execution:** Does Vox actually write files, or just generate diffs for user to apply?
 4. **Safety model:** What's the undo mechanism if bad code gets committed?
 5. **iOS vs Android:** Build for both simultaneously, or iOS-first?
+
 
 ---
 
@@ -260,20 +261,20 @@ User prompt: {transcript}
 - [ ] Color palette (deep blue #1a365d + cyan #00d4ff)
 - [ ] Landing page copy
 - [ ] Demo video (30 seconds, showing voice→code flow)
-- [ ] Twitter/X account (@projectsonar or @sonarcode)
+- [ ] Twitter/X account (@projectvox or @voxcode)
 
 ---
 
 ## Next Immediate Steps
 
-1. **Domain:** Register sonar.dev ($12/year)
-2. **Repo:** Create GitHub repo `sonar` (private initially)
+1. **Domain:** Register vox.dev ($12/year)
+2. **Repo:** Create GitHub repo `vox` (private initially)
 3. **API Keys:** Get Deepgram, Anthropic, ElevenLabs API keys
 4. **Decide:** iOS-first or Android-first? (Recommendation: iOS, you're on iOS)
 5. **Timebox:** Commit to weekend build (April 5-6?) or next available weekend
 
 ---
 
-**PROJECT SONAR IS OFFICIALLY LIVE.** 
+**PROJECT VOX IS OFFICIALLY LIVE.**
 
 Want me to start writing the FastAPI backend skeleton right now, or do you want to tackle those open questions first?

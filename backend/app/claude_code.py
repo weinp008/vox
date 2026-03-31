@@ -28,8 +28,8 @@ current_settings = ClaudeCodeSettings()
 _activity: dict[str, list[str]] = {}
 
 
-def get_activity(sonar_session_id: str) -> list[str]:
-    return _activity.get(sonar_session_id, [])
+def get_activity(vox_session_id: str) -> list[str]:
+    return _activity.get(vox_session_id, [])
 
 
 def _add_activity(sid: str, line: str):
@@ -45,11 +45,11 @@ def run_claude_code(
     cwd: str,
     session_id: str | None = None,
     settings: ClaudeCodeSettings | None = None,
-    sonar_session_id: str | None = None,
+    vox_session_id: str | None = None,
 ) -> tuple[str, str | None, int, list[str]]:
     """Run a prompt through Claude Code CLI with live activity tracking."""
     s = settings or current_settings
-    sid = sonar_session_id or "unknown"
+    sid = vox_session_id or "unknown"
     _activity[sid] = ["Starting Claude Code..."]
 
     cmd = [
@@ -305,7 +305,7 @@ def run_compact(cwd: str, cc_session_id: str) -> tuple[str, str | None]:
         "/compact",
         cwd,
         session_id=cc_session_id,
-        sonar_session_id="compact",
+        vox_session_id="compact",
     )
     return text, new_sid
 

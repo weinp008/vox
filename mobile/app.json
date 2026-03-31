@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "Sonar",
-    "slug": "sonar",
+    "name": "Vox",
+    "slug": "vox",
     "version": "1.0.0",
     "orientation": "portrait",
     "userInterfaceStyle": "dark",
@@ -9,13 +9,13 @@
       "backgroundColor": "#060d1a"
     },
     "ios": {
-      "bundleIdentifier": "com.sonar.app",
+      "bundleIdentifier": "com.vox.app",
       "infoPlist": {
-        "NSMicrophoneUsageDescription": "Sonar needs your microphone to record voice commands."
+        "NSMicrophoneUsageDescription": "Vox needs your microphone to record voice commands."
       }
     },
     "android": {
-      "package": "com.sonar.app",
+      "package": "com.vox.app",
       "permissions": ["RECORD_AUDIO"]
     }
   }
