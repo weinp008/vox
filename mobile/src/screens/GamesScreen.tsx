@@ -2,8 +2,9 @@ import React, { useState } from 'react';
 import { SafeAreaView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { MiniGame } from '../components/MiniGame';
 import { SnakeGame } from '../components/SnakeGame';
+import { CardGame } from '../components/CardGame';
 
-type Game = 'menu' | 'tictactoe' | 'snake';
+type Game = 'menu' | 'tictactoe' | 'snake' | 'blackjack';
 
 interface Props {
   onBack: () => void;
@@ -45,11 +46,18 @@ export function GamesScreen({ onBack, statusLine }: Props) {
               <Text style={styles.gameName}>Snake</Text>
               <Text style={styles.gameDesc}>Swipe to eat</Text>
             </TouchableOpacity>
+
+            <TouchableOpacity style={styles.gameCard} onPress={() => setGame('blackjack')}>
+              <Text style={styles.gameIcon}>🃏</Text>
+              <Text style={styles.gameName}>Blackjack</Text>
+              <Text style={styles.gameDesc}>Beat the dealer</Text>
+            </TouchableOpacity>
           </View>
         )}
 
         {game === 'tictactoe' && <MiniGame />}
         {game === 'snake' && <SnakeGame />}
+        {game === 'blackjack' && <CardGame />}
       </View>
     </SafeAreaView>
   );
@@ -84,7 +92,7 @@ const styles = StyleSheet.create({
   backText: { color: '#00d4ff', fontSize: 14 },
   title: { color: '#eef', fontWeight: '600', fontSize: 18 },
   body: { flex: 1, padding: 16 },
-  menu: { flexDirection: 'row', gap: 16, justifyContent: 'center', paddingTop: 40 },
+  menu: { flexDirection: 'row', flexWrap: 'wrap', gap: 16, justifyContent: 'center', paddingTop: 40 },
   gameCard: {
     width: 140,
     backgroundColor: '#0e1628',
