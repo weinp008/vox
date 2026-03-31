@@ -14,7 +14,7 @@ import {
   View,
   Alert,
 } from 'react-native';
-import { startSession, listSessions, listProjects, resumeSession, deleteSession, starSession, SessionSummary } from '../api';
+import { startSession, listSessions, listProjects, resumeSession, deleteSession, starSession, checkHealth, BASE_URL, SessionSummary } from '../api';
 import { useSession } from '../context/SessionContext';
 
 interface Props {
@@ -107,8 +107,10 @@ export function ProjectSelectScreen({ onSessionStarted }: Props) {
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
   const [projects, setProjects] = useState<string[]>([]);
   const [loadingSessions, setLoadingSessions] = useState(true);
+  const [backendReachable, setBackendReachable] = useState<boolean | null>(null);
 
   useEffect(() => {
+    checkHealth().then(setBackendReachable);
     loadSessions();
     listProjects().then(setProjects);
   }, []);
@@ -179,6 +181,17 @@ export function ProjectSelectScreen({ onSessionStarted }: Props) {
       <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
         <Text style={styles.title}>SONAR</Text>
         <Text style={styles.subtitle}>Navigate code by voice</Text>
+
+        {backendReachable === false && (
+          <TouchableOpacity
+            style={styles.healthBanner}
+            onPress={() => checkHealth().then(setBackendReachable)}
+          >
+            <Text style={styles.healthBannerText}>Backend not reachable</Text>
+            <Text style={styles.healthBannerUrl}>{BASE_URL}</Text>
+            <Text style={styles.healthBannerHint}>Tap to retry</Text>
+          </TouchableOpacity>
+        )}
 
         {/* Previous sessions */}
         {sessions.length > 0 && (
@@ -259,6 +272,18 @@ const styles = StyleSheet.create({
   scroll: { padding: 24, justifyContent: 'center', flexGrow: 1 },
   title: { color: '#00d4ff', fontSize: 36, fontWeight: 'bold', textAlign: 'center', letterSpacing: 4 },
   subtitle: { color: '#556', textAlign: 'center', marginBottom: 32, marginTop: 8, fontSize: 14 },
+  healthBanner: {
+    backgroundColor: '#331a1a',
+    borderRadius: 10,
+    padding: 14,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#662222',
+    alignItems: 'center',
+  },
+  healthBannerText: { color: '#ff6666', fontSize: 14, fontWeight: '700', marginBottom: 4 },
+  healthBannerUrl: { color: '#996666', fontSize: 12, fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace', marginBottom: 6 },
+  healthBannerHint: { color: '#884444', fontSize: 11 },
   card: {
     backgroundColor: '#0e1628',
     borderRadius: 14,

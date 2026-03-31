@@ -19,6 +19,40 @@ async function fetchWithTimeout(
   return Promise.race([fetch(url, options), timeout]);
 }
 
+/** Returns true if the error is a network-level failure (not an HTTP error). */
+function isNetworkError(err: unknown): boolean {
+  if (err instanceof TypeError) return true; // fetch throws TypeError on network failure
+  if (err instanceof Error && err.message === 'Network request failed') return true;
+  return false;
+}
+
+/** Optional callback invoked when a retry is about to happen. */
+export type OnRetryCallback = () => void;
+
+/**
+ * Wrap a fetch-returning function with a single auto-retry on network errors.
+ * HTTP errors (4xx/5xx) are NOT retried — only connectivity failures.
+ * Waits 2 seconds before the retry attempt.
+ */
+export async function fetchWithRetry<T>(
+  fn: () => Promise<T>,
+  onRetry?: OnRetryCallback,
+): Promise<T> {
+  try {
+    return await fn();
+  } catch (err) {
+    if (!isNetworkError(err)) throw err;
+    // Wait 2s then retry once
+    await new Promise((r) => setTimeout(r, 2000));
+    onRetry?.();
+    try {
+      return await fn();
+    } catch {
+      throw err; // throw the original error
+    }
+  }
+}
+
 export interface SessionSummary {
   session_id: string;
   project_name: string;
@@ -50,6 +84,18 @@ export async function getLastResponse(sessionId: string): Promise<string | null>
     return null;
   } catch {
     return null;
+  }
+}
+
+/** Ping the backend health endpoint. Returns true if reachable. */
+export async function checkHealth(): Promise<boolean> {
+  try {
+    const res = await fetchWithTimeout(`${BASE_URL}/health`, {}, 5000);
+    if (!res.ok) return false;
+    const data = await res.json();
+    return data.ok === true;
+  } catch {
+    return false;
   }
 }
 
@@ -93,7 +139,7 @@ export async function startSession(projectPath: string): Promise<StartSessionRes
 }
 
 /** Step 1: Transcribe audio → get text back fast. */
-export async function transcribeAudio(audioUri: string): Promise<string> {
+export async function transcribeAudio(audioUri: string, onRetry?: OnRetryCallback): Promise<string> {
   const form = new FormData();
   form.append('audio', {
     uri: audioUri,
@@ -101,16 +147,18 @@ export async function transcribeAudio(audioUri: string): Promise<string> {
     type: 'audio/m4a',
   } as any);
 
-  const res = await fetchWithTimeout(`${BASE_URL}/transcribe`, {
-    method: 'POST',
-    body: form,
-  }, 30000); // 30s for transcription
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ detail: res.statusText }));
-    throw new Error(err.detail ?? 'Transcription failed');
-  }
-  const data = await res.json();
-  return data.transcript;
+  return fetchWithRetry(async () => {
+    const res = await fetchWithTimeout(`${BASE_URL}/transcribe`, {
+      method: 'POST',
+      body: form,
+    }, 30000); // 30s for transcription
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: res.statusText }));
+      throw new Error(err.detail ?? 'Transcription failed');
+    }
+    const data = await res.json();
+    return data.transcript;
+  }, onRetry);
 }
 
 /** Step 2: Send transcribed text to Claude → get response + TTS. */
@@ -119,20 +167,23 @@ export async function sendText(
   text: string,
   sessionState: SessionState,
   tts: boolean = true,
+  onRetry?: OnRetryCallback,
 ): Promise<PromptResponse> {
   const endpoint = sessionState === 'awaiting_response' ? '/respond/text' : '/prompt/text';
 
-  const res = await fetchWithTimeout(`${BASE_URL}${endpoint}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ session_id: sessionId, text, tts }),
-  }, 120000); // 2 min timeout for Claude Code
+  return fetchWithRetry(async () => {
+    const res = await fetchWithTimeout(`${BASE_URL}${endpoint}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ session_id: sessionId, text, tts }),
+    }, 120000); // 2 min timeout for Claude Code
 
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ detail: res.statusText }));
-    throw new Error(err.detail ?? 'Request failed');
-  }
-  return res.json();
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: res.statusText }));
+      throw new Error(err.detail ?? 'Request failed');
+    }
+    return res.json();
+  }, onRetry);
 }
 
 export async function requestTTS(text: string): Promise<string> {

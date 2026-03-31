@@ -3,7 +3,7 @@ import { ActionSheetIOS, Alert, Platform, SafeAreaView, StyleSheet, Text, Toucha
 
 import * as Clipboard from 'expo-clipboard';
 import * as ImagePicker from 'expo-image-picker';
-import { transcribeAudio, sendText, sendImage, requestTTS, updateSettings, getSettings, renameSession, getActivity, compactSession, clearContext, getLastResponse, resumeSession, listBranches, switchBranch, SonarSettings } from '../api';
+import { transcribeAudio, sendText, sendImage, requestTTS, updateSettings, getSettings, renameSession, getActivity, compactSession, clearContext, getLastResponse, resumeSession, listBranches, switchBranch, SonarSettings, OnRetryCallback } from '../api';
 import { DiffDisplay } from '../components/DiffDisplay';
 import { OptionsDisplay } from '../components/OptionsDisplay';
 import { RecordButton } from '../components/RecordButton';
@@ -44,6 +44,9 @@ export function VoiceScreen({ onLeaveSession, onOpenGames, onClaudeStatusChange 
   const [reviewMode, setReviewMode] = useState(false);
   const [displayName, setDisplayName] = useState(projectName);
   const [contextTokens, setContextTokens] = useState(0);
+  const [lastFailedMessage, setLastFailedMessage] = useState<string | null>(null);
+
+  const onRetry: OnRetryCallback = () => setStatusDetail('Retrying...');
 
   function handleResponse(entryId: string, response: import('../types').PromptResponse) {
     setEntryResponse(entryId, response);
@@ -147,13 +150,14 @@ export function VoiceScreen({ onLeaveSession, onOpenGames, onClaudeStatusChange 
 
   async function handleAskClaude(text: string) {
     if (uiState !== 'idle') return;
+    setLastFailedMessage(null);
     try {
       const preview = text.slice(0, 50) + (text.length > 50 ? '...' : '');
       const entryId = addUserMessage(`Tell me more about: "${preview}"`);
       setUIState('processing');
       setStatusDetail('Waiting for Claude...');
       const currentState = lastResponse?.state ?? 'idle';
-      const response = await sendText(sessionId!, `Explain this in more detail: ${text}`, currentState, ttsEnabled);
+      const response = await sendText(sessionId!, `Explain this in more detail: ${text}`, currentState, ttsEnabled, onRetry);
       handleResponse(entryId, response);
       setStatusDetail(undefined);
       if (ttsEnabled && response.audio_url) {
@@ -164,6 +168,7 @@ export function VoiceScreen({ onLeaveSession, onOpenGames, onClaudeStatusChange 
         setUIState('idle');
       }
     } catch (e: any) {
+      setLastFailedMessage(`Explain this in more detail: ${text}`);
       setUIState('idle');
       await speakError(e.message ?? 'Something went wrong');
     }
@@ -191,12 +196,13 @@ export function VoiceScreen({ onLeaveSession, onOpenGames, onClaudeStatusChange 
       enqueueMessage(text);
       return;
     }
+    setLastFailedMessage(null);
     try {
       const entryId = addUserMessage(text);
       setUIState('processing');
       setStatusDetail('Waiting for Claude...');
       const currentState = lastResponse?.state ?? 'idle';
-      const response = await sendText(sessionId!, text, currentState, ttsEnabled);
+      const response = await sendText(sessionId!, text, currentState, ttsEnabled, onRetry);
       handleResponse(entryId, response);
       setStatusDetail(undefined);
       if (ttsEnabled && response.audio_url) {
@@ -207,6 +213,7 @@ export function VoiceScreen({ onLeaveSession, onOpenGames, onClaudeStatusChange 
         setUIState('idle');
       }
     } catch (e: any) {
+      setLastFailedMessage(text);
       setUIState('idle');
       await speakError(e.message ?? 'Something went wrong');
     }
@@ -267,14 +274,14 @@ export function VoiceScreen({ onLeaveSession, onOpenGames, onClaudeStatusChange 
 
       // If we were recording during processing, transcribe and enqueue
       if (uiState !== 'recording') {
-        const transcript = await transcribeAudio(uri);
+        const transcript = await transcribeAudio(uri, onRetry);
         enqueueMessage(transcript);
         return;
       }
 
       setUIState('transcribing');
       setStatusDetail('Sending to Whisper...');
-      const rawTranscript = await transcribeAudio(uri);
+      const rawTranscript = await transcribeAudio(uri, onRetry);
 
       let transcript = rawTranscript;
       if (reviewMode) {
@@ -287,11 +294,12 @@ export function VoiceScreen({ onLeaveSession, onOpenGames, onClaudeStatusChange 
 
       const entryId = addUserMessage(transcript);
 
+      setLastFailedMessage(null);
       try {
         setUIState('processing');
         setStatusDetail('Waiting for Claude...');
         const currentState = lastResponse?.state ?? 'idle';
-        const response = await sendText(sessionId!, transcript, currentState, ttsEnabled);
+        const response = await sendText(sessionId!, transcript, currentState, ttsEnabled, onRetry);
         handleResponse(entryId, response);
         setStatusDetail(undefined);
 
@@ -307,6 +315,7 @@ export function VoiceScreen({ onLeaveSession, onOpenGames, onClaudeStatusChange 
         if (isTimeout) {
           await tryRecoverResponse(entryId);
         } else {
+          setLastFailedMessage(transcript);
           await speakError(e.message ?? 'Something went wrong');
         }
       }
@@ -318,15 +327,16 @@ export function VoiceScreen({ onLeaveSession, onOpenGames, onClaudeStatusChange 
 
   async function handleOptionSelect(selection: string) {
     if (uiState !== 'idle') return;
+    setLastFailedMessage(null);
+    const selectionText = selection === 'all'
+      ? 'User selected all options. Proceed with all of them.'
+      : `User selected option ${selection}.`;
     try {
       const label = selection === 'all' ? 'All options' : `Option ${selection}`;
       const entryId = addUserMessage(label);
       setUIState('processing');
       setStatusDetail('Waiting for Claude...');
-      const text = selection === 'all'
-        ? 'User selected all options. Proceed with all of them.'
-        : `User selected option ${selection}.`;
-      const response = await sendText(sessionId!, text, 'awaiting_response', ttsEnabled);
+      const response = await sendText(sessionId!, selectionText, 'awaiting_response', ttsEnabled, onRetry);
       handleResponse(entryId, response);
       setStatusDetail(undefined);
       if (ttsEnabled && response.audio_url) {
@@ -337,6 +347,7 @@ export function VoiceScreen({ onLeaveSession, onOpenGames, onClaudeStatusChange 
         setUIState('idle');
       }
     } catch (e: any) {
+      setLastFailedMessage(selectionText);
       setUIState('idle');
       await speakError(e.message ?? 'Something went wrong');
     }
@@ -584,6 +595,18 @@ export function VoiceScreen({ onLeaveSession, onOpenGames, onClaudeStatusChange 
             <Text style={styles.gamesPromptText}>Play games while waiting →</Text>
           </TouchableOpacity>
         )}
+        {lastFailedMessage && uiState === 'idle' && (
+          <TouchableOpacity
+            onPress={() => {
+              const msg = lastFailedMessage;
+              setLastFailedMessage(null);
+              handleResendPrompt(msg);
+            }}
+            style={styles.retryBanner}
+          >
+            <Text style={styles.retryBannerText}>Request failed. Tap to retry</Text>
+          </TouchableOpacity>
+        )}
         <TranscriptDisplay
           conversation={conversation}
           isCompact={isCompact}
@@ -649,6 +672,17 @@ const styles = StyleSheet.create({
     borderColor: '#1a3055',
   },
   gamesPromptText: { color: '#00d4ff', fontSize: 13 },
+  retryBanner: {
+    alignSelf: 'center',
+    backgroundColor: '#331a1a',
+    borderRadius: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: '#662222',
+  },
+  retryBannerText: { color: '#ff6666', fontSize: 13, fontWeight: '600' },
   body: { flex: 1, paddingHorizontal: 16, paddingTop: 12 },
   controls: {},
 });
