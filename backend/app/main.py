@@ -42,6 +42,7 @@ class SessionSummary(BaseModel):
     message_count: int
     last_message: str
     updated_at: float
+    starred: bool = False
 
 
 class ResumeSessionResponse(BaseModel):
@@ -104,6 +105,17 @@ async def rename_session(session_id: str, req: RenameSessionRequest):
     session.project_name = req.name
     session._save()
     return {"ok": True, "name": req.name}
+
+
+@app.post("/session/{session_id}/star")
+async def star_session(session_id: str):
+    """Toggle the starred state of a session."""
+    session = get_session(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    session.starred = not session.starred
+    session._save()
+    return {"ok": True, "starred": session.starred}
 
 
 class SettingsResponse(BaseModel):

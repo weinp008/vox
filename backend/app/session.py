@@ -25,6 +25,7 @@ class Session:
         self.claude_code_session_id: str | None = None
         self.created_at: float = time.time()
         self.updated_at: float = time.time()
+        self.starred: bool = False
         self._load_project_context()
 
     def _load_project_context(self):
@@ -93,6 +94,7 @@ class Session:
             "current_branch": getattr(self, "current_branch", ""),
             "created_at": self.created_at,
             "updated_at": self.updated_at,
+            "starred": self.starred,
         }
         with open(path, "w") as f:
             json.dump(data, f)
@@ -117,6 +119,7 @@ class Session:
         session.current_branch = data.get("current_branch", "")
         session.created_at = data.get("created_at", 0)
         session.updated_at = data.get("updated_at", 0)
+        session.starred = data.get("starred", False)
         session.files = []
         session.recent_commits = []
         session._load_project_context()
@@ -169,8 +172,9 @@ def list_sessions() -> list[dict]:
                 "message_count": msg_count,
                 "last_message": last_msg,
                 "updated_at": data.get("updated_at", 0),
+                "starred": data.get("starred", False),
             })
         except (json.JSONDecodeError, KeyError):
             continue
-    sessions.sort(key=lambda s: s["updated_at"], reverse=True)
+    sessions.sort(key=lambda s: (not s["starred"], -s["updated_at"]))
     return sessions

@@ -14,7 +14,7 @@ import {
   View,
   Alert,
 } from 'react-native';
-import { startSession, listSessions, listProjects, resumeSession, deleteSession, SessionSummary } from '../api';
+import { startSession, listSessions, listProjects, resumeSession, deleteSession, starSession, SessionSummary } from '../api';
 import { useSession } from '../context/SessionContext';
 
 interface Props {
@@ -33,11 +33,13 @@ function SwipeableSessionItem({
   item,
   onResume,
   onDelete,
+  onStar,
   disabled,
 }: {
   item: SessionSummary;
   onResume: () => void;
   onDelete: () => void;
+  onStar: () => void;
   disabled: boolean;
 }) {
   const translateX = useRef(new Animated.Value(0)).current;
@@ -82,7 +84,12 @@ function SwipeableSessionItem({
             <Text style={styles.sessionName}>
               {item.project_name}{item.branch ? ` · ${item.branch}` : ''}
             </Text>
-            <Text style={styles.sessionTime}>{timeAgo(item.updated_at)}</Text>
+            <View style={styles.sessionMeta}>
+              <TouchableOpacity onPress={(e) => { e.stopPropagation(); onStar(); }} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                <Text style={item.starred ? styles.starOn : styles.starOff}>★</Text>
+              </TouchableOpacity>
+              <Text style={styles.sessionTime}>{timeAgo(item.updated_at)}</Text>
+            </View>
           </View>
           <Text style={styles.sessionPreview} numberOfLines={1}>
             {item.last_message || `${item.message_count} messages`}
@@ -155,6 +162,18 @@ export function ProjectSelectScreen({ onSessionStarted }: Props) {
     }
   }
 
+  async function handleStar(sessionId: string) {
+    try {
+      const { starred } = await starSession(sessionId);
+      setSessions(prev => {
+        const updated = prev.map(s => s.session_id === sessionId ? { ...s, starred } : s);
+        return [...updated].sort((a, b) => (b.starred ? 1 : 0) - (a.starred ? 1 : 0) || b.updated_at - a.updated_at);
+      });
+    } catch {
+      // Silently fail
+    }
+  }
+
   return (
     <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.container}>
       <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
@@ -175,6 +194,7 @@ export function ProjectSelectScreen({ onSessionStarted }: Props) {
                   item={item}
                   onResume={() => handleResume(item.session_id)}
                   onDelete={() => handleDelete(item.session_id)}
+                  onStar={() => handleStar(item.session_id)}
                   disabled={loading}
                 />
               )}
@@ -274,7 +294,10 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   sessionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 },
-  sessionName: { color: '#aac', fontSize: 15, fontWeight: '600' },
+  sessionName: { color: '#aac', fontSize: 15, fontWeight: '600', flex: 1, marginRight: 8 },
+  sessionMeta: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  starOn: { color: '#ffcc00', fontSize: 16 },
+  starOff: { color: '#334', fontSize: 16 },
   sessionTime: { color: '#445', fontSize: 11 },
   sessionPreview: { color: '#556', fontSize: 13 },
   projectItem: {

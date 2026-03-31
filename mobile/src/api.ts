@@ -26,6 +26,7 @@ export interface SessionSummary {
   message_count: number;
   last_message: string;
   updated_at: number;
+  starred: boolean;
 }
 
 export interface ResumeSessionResponse {
@@ -195,6 +196,11 @@ export async function clearContext(sessionId: string): Promise<void> {
 
 export async function deleteSession(sessionId: string): Promise<void> {
   await fetch(`${BASE_URL}/session/${sessionId}`, { method: 'DELETE' });
+}
+
+export async function starSession(sessionId: string): Promise<{ starred: boolean }> {
+  const res = await fetch(`${BASE_URL}/session/${sessionId}/star`, { method: 'POST' });
+  return res.json();
 }
 
 export async function renameSession(sessionId: string, name: string): Promise<void> {

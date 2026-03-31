@@ -73,7 +73,7 @@ def run_claude_code(
 
     result_text = ""
     cc_session_id = session_id
-    input_tokens = 0
+    context_tokens = 0
 
     try:
         for line in proc.stdout:
@@ -112,8 +112,12 @@ def run_claude_code(
                     cc_session_id = event.get("session_id", session_id)
                     duration = event.get("duration_ms", 0)
                     usage = event.get("usage", {})
-                    input_tokens = usage.get("input_tokens", 0)
-                    _add_activity(sid, f"Done ({duration / 1000:.1f}s)")
+                    context_tokens = (
+                        usage.get("input_tokens", 0)
+                        + usage.get("cache_creation_input_tokens", 0)
+                        + usage.get("cache_read_input_tokens", 0)
+                    )
+                    _add_activity(sid, f"Done ({duration / 1000:.1f}s, {context_tokens} tokens)")
 
             except json.JSONDecodeError:
                 continue
@@ -123,14 +127,14 @@ def run_claude_code(
     except subprocess.TimeoutExpired:
         proc.kill()
         _add_activity(sid, "Timed out")
-        return "Claude Code timed out.", cc_session_id, input_tokens
+        return "Claude Code timed out.", cc_session_id, context_tokens
 
     if proc.returncode != 0 and not result_text:
         stderr = proc.stderr.read() if proc.stderr else ""
         _add_activity(sid, f"Error: {(stderr.strip() or 'unknown')[:80]}")
-        return stderr.strip() or "Claude Code error", cc_session_id, input_tokens
+        return stderr.strip() or "Claude Code error", cc_session_id, context_tokens
 
-    return result_text, cc_session_id, input_tokens
+    return result_text, cc_session_id, context_tokens
 
 
 def run_compact(cwd: str, cc_session_id: str) -> tuple[str, str | None]:
@@ -176,7 +180,7 @@ async def get_claude_code_response(
     import asyncio
 
     loop = asyncio.get_event_loop()
-    response_text, new_cc_session, input_tokens = await loop.run_in_executor(
+    response_text, new_cc_session, context_tokens = await loop.run_in_executor(
         None,
         run_claude_code,
         user_text,
@@ -187,8 +191,8 @@ async def get_claude_code_response(
     )
 
     session.claude_code_session_id = new_cc_session
-    if input_tokens:
-        session.context_tokens = input_tokens
+    if context_tokens:
+        session.context_tokens = context_tokens
     session.add_user_message(user_text)
     session.add_assistant_message(response_text)
 
