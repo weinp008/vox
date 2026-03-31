@@ -14,7 +14,7 @@ import {
   View,
   Alert,
 } from 'react-native';
-import { startSession, listSessions, listProjects, resumeSession, deleteSession, starSession, checkHealth, BASE_URL, SessionSummary } from '../api';
+import { startSession, listSessions, listProjects, resumeSession, deleteSession, starSession, checkHealth, loadBaseUrl, setBaseUrl, BASE_URL, SessionSummary } from '../api';
 import { useSession } from '../context/SessionContext';
 
 interface Props {
@@ -108,12 +108,27 @@ export function ProjectSelectScreen({ onSessionStarted }: Props) {
   const [projects, setProjects] = useState<string[]>([]);
   const [loadingSessions, setLoadingSessions] = useState(true);
   const [backendReachable, setBackendReachable] = useState<boolean | null>(null);
+  const [serverUrl, setServerUrl] = useState(BASE_URL);
+  const [editingUrl, setEditingUrl] = useState(false);
 
   useEffect(() => {
-    checkHealth().then(setBackendReachable);
-    loadSessions();
-    listProjects().then(setProjects);
+    loadBaseUrl().then((url) => {
+      setServerUrl(url);
+      checkHealth().then(setBackendReachable);
+      loadSessions();
+      listProjects().then(setProjects);
+    });
   }, []);
+
+  async function handleUrlSave() {
+    await setBaseUrl(serverUrl);
+    setEditingUrl(false);
+    setBackendReachable(null);
+    checkHealth().then((ok) => {
+      setBackendReachable(ok);
+      if (ok) { loadSessions(); listProjects().then(setProjects); }
+    });
+  }
 
   async function loadSessions() {
     setLoadingSessions(true);
@@ -262,6 +277,34 @@ export function ProjectSelectScreen({ onSessionStarted }: Props) {
             )}
           </TouchableOpacity>
         </View>
+        {/* Server URL config */}
+        <View style={styles.card}>
+          <TouchableOpacity onPress={() => setEditingUrl(!editingUrl)}>
+            <Text style={styles.cardLabel}>Server {backendReachable === true ? '· connected' : backendReachable === false ? '· offline' : ''}</Text>
+          </TouchableOpacity>
+          {editingUrl ? (
+            <>
+              <TextInput
+                style={styles.input}
+                value={serverUrl}
+                onChangeText={setServerUrl}
+                autoCapitalize="none"
+                autoCorrect={false}
+                placeholder="http://192.168.x.x:8000"
+                placeholderTextColor="#445"
+                onSubmitEditing={handleUrlSave}
+                selectTextOnFocus
+              />
+              <TouchableOpacity style={styles.startBtn} onPress={handleUrlSave}>
+                <Text style={styles.startBtnText}>Save</Text>
+              </TouchableOpacity>
+            </>
+          ) : (
+            <TouchableOpacity onPress={() => setEditingUrl(true)}>
+              <Text style={styles.serverUrl}>{serverUrl}</Text>
+            </TouchableOpacity>
+          )}
+        </View>
       </ScrollView>
     </KeyboardAvoidingView>
   );
@@ -350,4 +393,5 @@ const styles = StyleSheet.create({
   startBtn: { backgroundColor: '#00d4ff', borderRadius: 8, padding: 14, alignItems: 'center' },
   startBtnDisabled: { opacity: 0.4 },
   startBtnText: { color: '#000', fontWeight: 'bold', fontSize: 15 },
+  serverUrl: { color: '#556', fontSize: 13, fontFamily: 'monospace' },
 });

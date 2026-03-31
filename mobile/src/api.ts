@@ -1,8 +1,26 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { PromptResponse, SessionState, StartSessionResponse } from './types';
 
-// iOS Simulator: http://localhost:8000
-// Physical device: http://<your-lan-ip>:8000
-export const BASE_URL = 'http://192.168.68.60:8000';
+const DEFAULT_URL = 'http://192.168.68.60:8000';
+export let BASE_URL = DEFAULT_URL;
+
+/** Load saved server URL from storage. Call once on app start. */
+export async function loadBaseUrl(): Promise<string> {
+  try {
+    const saved = await AsyncStorage.getItem('sonar_base_url');
+    if (saved) BASE_URL = saved;
+  } catch {}
+  return BASE_URL;
+}
+
+/** Update and persist the server URL. */
+export async function setBaseUrl(url: string): Promise<void> {
+  // Clean up: strip trailing slash, ensure http://
+  let clean = url.trim().replace(/\/+$/, '');
+  if (clean && !clean.startsWith('http')) clean = 'http://' + clean;
+  BASE_URL = clean || DEFAULT_URL;
+  await AsyncStorage.setItem('sonar_base_url', BASE_URL);
+}
 
 /** Fetch with timeout (default 120s for Claude Code calls).
  *  Uses Promise.race instead of AbortController — RN's fetch polyfill
