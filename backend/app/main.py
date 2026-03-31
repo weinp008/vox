@@ -214,6 +214,18 @@ async def session_activity(session_id: str):
     return {"activity": get_activity(session_id)}
 
 
+@app.delete("/session/{session_id}")
+async def delete_session(session_id: str):
+    """Delete a session and its persisted file."""
+    import os as _os
+    from app.session import SESSIONS_DIR, _sessions
+    path = _os.path.join(SESSIONS_DIR, f"{session_id}.json")
+    if _os.path.exists(path):
+        _os.remove(path)
+    _sessions.pop(session_id, None)
+    return {"ok": True}
+
+
 class TranscribeResponse(BaseModel):
     transcript: str
 

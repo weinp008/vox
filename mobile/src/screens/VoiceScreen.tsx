@@ -16,9 +16,11 @@ import { useChime } from '../hooks/useChime';
 
 interface Props {
   onLeaveSession: () => void;
+  onOpenGames?: () => void;
+  onClaudeStatusChange?: (status: string | undefined) => void;
 }
 
-export function VoiceScreen({ onLeaveSession }: Props) {
+export function VoiceScreen({ onLeaveSession, onOpenGames, onClaudeStatusChange }: Props) {
   const {
     sessionId, projectName, conversation, lastResponse, uiState, isCompact, ttsEnabled,
     addUserMessage, setEntryResponse, setUIState, toggleCompact, toggleTTS, clearSession,
@@ -30,7 +32,11 @@ export function VoiceScreen({ onLeaveSession }: Props) {
     setUIState('idle');
   }, [setUIState]);
 
-  const [statusDetail, setStatusDetail] = useState<string | undefined>();
+  const [statusDetail, setStatusDetailRaw] = useState<string | undefined>();
+  const setStatusDetail = useCallback((s: string | undefined) => {
+    setStatusDetailRaw(s);
+    onClaudeStatusChange?.(s);
+  }, [onClaudeStatusChange]);
   const [readingEntryId, setReadingEntryId] = useState<string | null>(null);
   const [currentModel, setCurrentModel] = useState('sonnet');
   const [planMode, setPlanMode] = useState(false);
@@ -336,69 +342,53 @@ export function VoiceScreen({ onLeaveSession }: Props) {
     }, 'plain-text', displayName ?? '');
   }
 
-  function handleModelSwitch() {
-    if (Platform.OS === 'ios') {
-      ActionSheetIOS.showActionSheetWithOptions(
-        {
-          title: `Current: ${currentModel}`,
-          options: ['Haiku (fastest)', 'Sonnet (balanced)', 'Opus (smartest)', 'Cancel'],
-          cancelButtonIndex: 3,
-        },
-        (index) => {
-          const models = ['haiku', 'sonnet', 'opus'];
-          if (index < 3) {
-            const model = models[index];
-            setCurrentModel(model);
-            updateSettings({ model });
-          }
-        },
-      );
-    }
-  }
+  function handleSettings() {
+    const ctxPct = Math.round((contextTokens / 200000) * 100);
+    const ctxLabel = contextTokens > 0 ? `${Math.round(contextTokens / 1000)}k (${ctxPct}%)` : '0k';
+    const modeLabel = mobileMode === 'pure_vibe' ? 'Vibe' : mobileMode === 'diff_with_accept' ? 'Accept' : 'Diff';
 
-  function handleMobileModeSwitch() {
-    if (Platform.OS === 'ios') {
-      ActionSheetIOS.showActionSheetWithOptions(
-        {
-          title: `Mode: ${mobileMode}`,
-          options: ['Diff only (show, copy manually)', 'Diff + accept (show, tap to apply)', 'Pure vibe (auto-apply, voice only)', 'Cancel'],
-          cancelButtonIndex: 3,
-        },
-        (index) => {
-          const modes: SonarSettings['mobile_mode'][] = ['diff_only', 'diff_with_accept', 'pure_vibe'];
-          if (index < 3) {
-            const mode = modes[index];
-            setMobileMode(mode);
-            updateSettings({ mobile_mode: mode });
-          }
-        },
-      );
-    }
-  }
-
-  function handleContextMenu() {
-    const pct = Math.round((contextTokens / 200000) * 100);
-    if (Platform.OS === 'ios') {
-      ActionSheetIOS.showActionSheetWithOptions(
-        {
-          title: `Context: ${contextTokens.toLocaleString()} tokens (${pct}% of 200k)`,
-          options: ['Compact (summarize)', 'Clear (start fresh)', 'Cancel'],
-          cancelButtonIndex: 2,
-          destructiveButtonIndex: 1,
-        },
-        async (index) => {
-          if (index === 0 && sessionId) {
-            setStatusDetail('Compacting context...');
-            await compactSession(sessionId);
-            setContextTokens(0);
-            setStatusDetail(undefined);
-          } else if (index === 1 && sessionId) {
-            await clearContext(sessionId);
-            setContextTokens(0);
-          }
-        },
-      );
-    }
+    ActionSheetIOS.showActionSheetWithOptions(
+      {
+        title: 'Settings',
+        options: [
+          `Model: ${currentModel}`,
+          `Apply mode: ${modeLabel}`,
+          `TTS: ${ttsEnabled ? 'ON ✓' : 'OFF'}`,
+          `Plan mode: ${planMode ? 'ON ✓' : 'OFF'}`,
+          `Review transcript: ${reviewMode ? 'ON ✓' : 'OFF'}`,
+          `Context: ${ctxLabel}`,
+          'Cancel',
+        ],
+        cancelButtonIndex: 6,
+      },
+      (index) => {
+        if (index === 0) {
+          ActionSheetIOS.showActionSheetWithOptions(
+            { title: `Model: ${currentModel}`, options: ['Haiku (fastest)', 'Sonnet (balanced)', 'Opus (smartest)', 'Cancel'], cancelButtonIndex: 3 },
+            (i) => { const models = ['haiku', 'sonnet', 'opus']; if (i < 3) { setCurrentModel(models[i]); updateSettings({ model: models[i] }); } },
+          );
+        } else if (index === 1) {
+          ActionSheetIOS.showActionSheetWithOptions(
+            { title: `Apply mode: ${modeLabel}`, options: ['Diff only (copy manually)', 'Diff + accept (tap to apply)', 'Pure vibe (auto-apply)', 'Cancel'], cancelButtonIndex: 3 },
+            (i) => { const modes: SonarSettings['mobile_mode'][] = ['diff_only', 'diff_with_accept', 'pure_vibe']; if (i < 3) { setMobileMode(modes[i]); updateSettings({ mobile_mode: modes[i] }); } },
+          );
+        } else if (index === 2) {
+          toggleTTS();
+        } else if (index === 3) {
+          handleTogglePlan();
+        } else if (index === 4) {
+          setReviewMode(r => !r);
+        } else if (index === 5) {
+          ActionSheetIOS.showActionSheetWithOptions(
+            { title: `Context: ${contextTokens.toLocaleString()} tokens (${ctxPct}% of 200k)`, options: ['Compact (summarize)', 'Clear (start fresh)', 'Cancel'], cancelButtonIndex: 2, destructiveButtonIndex: 1 },
+            async (i) => {
+              if (i === 0 && sessionId) { setStatusDetail('Compacting context...'); await compactSession(sessionId); setContextTokens(0); setStatusDetail(undefined); }
+              else if (i === 1 && sessionId) { await clearContext(sessionId); setContextTokens(0); }
+            },
+          );
+        }
+      },
+    );
   }
 
   async function handleImageAttach() {
@@ -509,29 +499,8 @@ export function VoiceScreen({ onLeaveSession }: Props) {
           </Text>
         </TouchableOpacity>
         <View style={styles.headerRight}>
-          <TouchableOpacity onPress={handleContextMenu}>
-            <Text style={[styles.ctxText, contextTokens > 160000 && styles.ctxWarn]}>
-              {contextTokens > 0 ? `${Math.round(contextTokens / 1000)}k` : 'ctx'}
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity onPress={() => setReviewMode(r => !r)}>
-            <Text style={[styles.reviewText, !reviewMode && styles.reviewOff]}>Review</Text>
-          </TouchableOpacity>
-          <TouchableOpacity onPress={handleTogglePlan}>
-            <Text style={[styles.planText, !planMode && styles.planOff]}>Plan</Text>
-          </TouchableOpacity>
-          <TouchableOpacity onPress={handleMobileModeSwitch}>
-            <Text style={[styles.modeText, mobileMode === 'pure_vibe' && styles.modeVibe, mobileMode === 'diff_with_accept' && styles.modeAccept]}>
-              {mobileMode === 'pure_vibe' ? 'Vibe' : mobileMode === 'diff_with_accept' ? 'Accept' : 'Diff'}
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity onPress={handleModelSwitch}>
-            <Text style={styles.modelText}>{currentModel}</Text>
-          </TouchableOpacity>
-          <TouchableOpacity onPress={toggleTTS}>
-            <Text style={[styles.ttsText, !ttsEnabled && styles.ttsOff]}>
-              {ttsEnabled ? 'TTS ON' : 'TTS OFF'}
-            </Text>
+          <TouchableOpacity onPress={handleSettings} style={styles.gearBtn}>
+            <Text style={styles.gearText}>⚙</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -551,7 +520,11 @@ export function VoiceScreen({ onLeaveSession }: Props) {
             onSelectAll={() => handleOptionSelect('all')}
           />
         )}
-        {(uiState === 'processing' || uiState === 'transcribing') && <MiniGame />}
+        {(uiState === 'processing' || uiState === 'transcribing') && onOpenGames && (
+          <TouchableOpacity onPress={onOpenGames} style={styles.gamesPrompt}>
+            <Text style={styles.gamesPromptText}>Play games while waiting →</Text>
+          </TouchableOpacity>
+        )}
         <TranscriptDisplay
           conversation={conversation}
           isCompact={isCompact}
@@ -595,19 +568,20 @@ const styles = StyleSheet.create({
   backText: { color: '#00d4ff', fontSize: 14 },
   nameBtn: { flex: 1 },
   projectName: { color: '#eef', fontWeight: '600', fontSize: 16, textAlign: 'center' },
-  headerRight: { flexDirection: 'row', gap: 8, alignItems: 'center', justifyContent: 'flex-end' },
-  ctxText: { color: '#445', fontSize: 11, fontWeight: '600', minWidth: 24, textAlign: 'right' },
-  ctxWarn: { color: '#ff8800' },
-  reviewText: { color: '#ffdd44', fontSize: 11, fontWeight: '600' },
-  reviewOff: { color: '#556' },
-  planText: { color: '#00ff88', fontSize: 11, fontWeight: '600' },
-  planOff: { color: '#556' },
-  modelText: { color: '#ffaa00', fontSize: 11, fontWeight: '600' },
-  ttsText: { color: '#00d4ff', fontSize: 11, fontWeight: '600' },
-  ttsOff: { color: '#556' },
-  modeText: { color: '#556', fontSize: 11, fontWeight: '600' },
-  modeVibe: { color: '#cc44ff' },
-  modeAccept: { color: '#44bbff' },
+  headerRight: { alignItems: 'center', justifyContent: 'flex-end' },
+  gearBtn: { padding: 4 },
+  gearText: { color: '#556', fontSize: 18 },
+  gamesPrompt: {
+    alignSelf: 'center',
+    backgroundColor: '#0e1628',
+    borderRadius: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: '#1a3055',
+  },
+  gamesPromptText: { color: '#00d4ff', fontSize: 13 },
   body: { flex: 1, paddingHorizontal: 16, paddingTop: 12 },
   controls: {},
 });

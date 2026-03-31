@@ -193,6 +193,10 @@ export async function clearContext(sessionId: string): Promise<void> {
   await fetch(`${BASE_URL}/session/${sessionId}/clear`, { method: 'POST' });
 }
 
+export async function deleteSession(sessionId: string): Promise<void> {
+  await fetch(`${BASE_URL}/session/${sessionId}`, { method: 'DELETE' });
+}
+
 export async function renameSession(sessionId: string, name: string): Promise<void> {
   await fetch(`${BASE_URL}/session/${sessionId}/rename`, {
     method: 'POST',
