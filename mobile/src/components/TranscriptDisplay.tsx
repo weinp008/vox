@@ -199,10 +199,14 @@ export function TranscriptDisplay({
                         </Pressable>
                       );
                     })}
-                    {entry.response.timing && (
+                    {(entry.response.timing || (entry.response.edited_files?.length ?? 0) > 0) && (
                       <Text style={styles.timingText}>
-                        Claude {entry.response.timing.claude}s
-                        {entry.response.timing.tts > 0 ? ` · TTS ${entry.response.timing.tts}s` : ''}
+                        {entry.response.timing
+                          ? `Claude ${entry.response.timing.claude}s${entry.response.timing.tts > 0 ? ` · TTS ${entry.response.timing.tts}s` : ''}`
+                          : ''}
+                        {(entry.response.edited_files?.length ?? 0) > 0
+                          ? `${entry.response.timing ? ' · ' : ''}✎ ${entry.response.edited_files!.map(f => f.split('/').pop()).join(', ')}`
+                          : ''}
                       </Text>
                     )}
                   </>

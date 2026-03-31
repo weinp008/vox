@@ -21,6 +21,7 @@ export interface PromptResponse {
   state: SessionState;
   timing?: { claude: number; tts: number } | null;
   context_tokens?: number;
+  edited_files?: string[];
 }
 
 /** A single exchange in the conversation history. */

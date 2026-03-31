@@ -55,6 +55,7 @@ class PromptResponse(BaseModel):
     state: SessionState
     timing: Optional[Dict[str, float]] = None  # e.g. {"claude": 12.3, "tts": 1.5}
     context_tokens: int = 0
+    edited_files: List[str] = []
 
 
 class RespondRequest(BaseModel):

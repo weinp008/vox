@@ -386,10 +386,14 @@ async def prompt_image(
 
 
 async def _get_response(session, text: str):
-    """Route to Claude Code CLI or direct API based on config."""
+    """Route to Claude Code CLI or direct API based on config.
+    Always returns (response_text, response_type, options, diff, edited_files).
+    """
     if settings.use_claude_code:
         return await get_claude_code_response(session, text)
-    return await get_claude_response(session, text)
+    # Direct API path doesn't track file edits
+    response_text, response_type, options, diff = await get_claude_response(session, text)
+    return response_text, response_type, options, diff, []
 
 
 def _extract_voice_summary(response_text: str) -> str:
@@ -406,7 +410,7 @@ async def _process_prompt(session, text: str, tts: bool = True) -> PromptRespons
     import time as _time
 
     t0 = _time.time()
-    response_text, response_type, options, diff = await _get_response(session, text)
+    response_text, response_type, options, diff, edited_files = await _get_response(session, text)
     claude_time = round(_time.time() - t0, 1)
 
     if diff:
@@ -449,6 +453,7 @@ async def _process_prompt(session, text: str, tts: bool = True) -> PromptRespons
         state=session.state,
         timing=timing,
         context_tokens=session.context_tokens,
+        edited_files=edited_files,
     )
 
 
