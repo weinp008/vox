@@ -79,6 +79,18 @@
   .send-btn { background: transparent; color: var(--accent); border: none; padding: 8px 12px; font-weight: 500; cursor: pointer; font-size: 13px; flex-shrink: 0; }
   .send-btn:hover { color: var(--text); }
   .send-btn:disabled { opacity: 0.3; }
+  .attach-btn { width: 36px; height: 36px; border-radius: 18px; border: 1.5px solid var(--border); background: transparent; display: flex; align-items: center; justify-content: center; cursor: pointer; font-size: 16px; flex-shrink: 0; transition: all 0.15s; color: var(--muted); }
+  .attach-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .attach-btn.disabled { opacity: 0.3; pointer-events: none; }
+  .help-btn { background: none; border: 1px solid var(--border); color: var(--muted); font-size: 11px; cursor: pointer; padding: 2px 7px; border-radius: 4px; font-family: 'SF Mono', monospace; margin-right: 4px; }
+  .help-btn:hover { color: var(--text); border-color: var(--accent); }
+  .shortcut-section { margin-top: 16px; border-top: 1px solid var(--border); padding-top: 12px; }
+  .shortcut-section h4 { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px; font-weight: 500; }
+  .shortcut-row { display: flex; justify-content: space-between; align-items: center; padding: 4px 0; }
+  .shortcut-key { color: var(--accent); font-size: 12px; font-family: 'SF Mono', monospace; }
+  .shortcut-desc { color: var(--muted); font-size: 12px; }
+  .cancel-option { color: var(--amber); font-size: 12px; font-family: 'SF Mono', monospace; cursor: pointer; padding: 4px 8px; border-radius: 3px; display: none; }
+  .cancel-option:hover { background: var(--surface); }
 
   /* Settings */
   .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); display: none; align-items: center; justify-content: center; z-index: 100; }
@@ -119,7 +131,10 @@
       <span class="project-name" id="project-name-display"></span>
       <span class="branch" id="branch-display"></span>
     </div>
-    <button class="header-btn" id="settings-btn">&#9881;</button>
+    <div style="display:flex;align-items:center;gap:4px">
+      <button class="help-btn" id="help-btn">?</button>
+      <button class="header-btn" id="settings-btn">&#9881;</button>
+    </div>
   </div>
   <div class="ctx-bar"><div class="ctx-fill" id="ctx-fill"></div></div>
   <div class="activity" id="activity-bar">
@@ -131,8 +146,11 @@
   <div id="options-container"></div>
   <div class="controls">
     <div class="status-line" id="status-line"></div>
+    <div class="cancel-option" id="cancel-option" style="display:none">Press Esc again to cancel request</div>
     <div class="record-row">
       <div class="record-btn" id="record-btn">&#127897;</div>
+      <div class="attach-btn" id="attach-btn" title="Attach image">&#128206;</div>
+      <input type="file" id="image-input" accept="image/*" style="display:none">
       <textarea class="text-input" id="text-input" placeholder="Type a message..." rows="1" spellcheck="false"></textarea>
       <button class="send-btn" id="send-btn">&rarr;</button>
     </div>
@@ -147,6 +165,14 @@
     <div class="setting-row"><span class="setting-label">TTS</span><span class="setting-value" id="setting-tts">ON</span></div>
     <div class="setting-row"><span class="setting-label">Plan mode</span><span class="setting-value" id="setting-plan">OFF</span></div>
     <div class="setting-row"><span class="setting-label">Context</span><span class="setting-value" id="setting-ctx">0k</span></div>
+    <div class="shortcut-section" id="shortcuts-section" style="display:none">
+      <h4>Keyboard shortcuts</h4>
+      <div class="shortcut-row"><span class="shortcut-desc">Send message</span><span class="shortcut-key">Enter</span></div>
+      <div class="shortcut-row"><span class="shortcut-desc">Focus input</span><span class="shortcut-key">&#8984;/Ctrl+K</span></div>
+      <div class="shortcut-row"><span class="shortcut-desc">Open settings</span><span class="shortcut-key">&#8984;/Ctrl+,</span></div>
+      <div class="shortcut-row"><span class="shortcut-desc">Cancel recording</span><span class="shortcut-key">Esc</span></div>
+      <div class="shortcut-row"><span class="shortcut-desc">Cancel processing</span><span class="shortcut-key">Esc (2x)</span></div>
+    </div>
     <div style="margin-top:20px;text-align:right"><button class="header-btn" id="close-settings" style="font-size:12px">close</button></div>
   </div>
 </div>
@@ -290,18 +316,44 @@ function showVoiceScreen() {
   loadSettings();
 }
 
+let currentAbortController = null;
+
 async function sendToBackend(text, state) {
-  addThinking(); setUI('processing'); startActivityPolling();
-  try {
-    const endpoint = state === 'awaiting_response' ? '/respond/text' : '/prompt/text';
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 120000);
+  addThinking(); setUI('processing');
+
+  // Try SSE streaming first for prompt (non-respond) requests
+  if (state !== 'awaiting_response') {
+    try {
+      const ok = await sendViaStream(text);
+      if (ok) { setUI('idle'); $('cancel-option').style.display = 'none'; return; }
+    } catch(e) { /* fall through to POST fallback */ }
+  }
+
+  // Fallback: original POST approach
+  startActivityPolling();
+  const endpoint = state === 'awaiting_response' ? '/respond/text' : '/prompt/text';
+  const doFetch = async (isRetry) => {
+    currentAbortController = new AbortController();
+    const timer = setTimeout(() => currentAbortController.abort(), 120000);
     const res = await fetch(API + endpoint, {
       method: 'POST', headers: {'Content-Type':'application/json'},
       body: JSON.stringify({ session_id: sessionId, text: text, tts: ttsEnabled }),
-      signal: controller.signal,
+      signal: currentAbortController.signal,
     });
     clearTimeout(timer);
+    return res;
+  };
+  try {
+    let res;
+    try {
+      res = await doFetch(false);
+    } catch(e1) {
+      if (e1.name === 'AbortError') throw e1;
+      const thinkEl = document.querySelector('#thinking-bubble .thinking');
+      if (thinkEl) thinkEl.lastChild.textContent = ' retrying...';
+      await new Promise(r => setTimeout(r, 2000));
+      res = await doFetch(true);
+    }
     const data = await res.json();
     removeThinking();
     addMessage('assistant', data.response_text, data.timing);
@@ -315,9 +367,104 @@ async function sendToBackend(text, state) {
     }
   } catch(e) {
     removeThinking();
-    addMessage('assistant', 'error: ' + (e.message || 'network error'));
+    if (e.name === 'AbortError') {
+      addMessage('assistant', 'request cancelled');
+    } else {
+      addMessage('assistant', 'error: ' + (e.message || 'network error'));
+    }
   }
+  currentAbortController = null;
   stopActivityPolling(); setUI('idle');
+  $('cancel-option').style.display = 'none';
+}
+
+async function sendViaStream(text) {
+  const url = API + '/prompt/stream?session_id=' + encodeURIComponent(sessionId) + '&text=' + encodeURIComponent(text) + '&tts=' + (ttsEnabled ? 'true' : 'false');
+  currentAbortController = new AbortController();
+  const timer = setTimeout(() => currentAbortController.abort(), 180000);
+  const res = await fetch(url, { signal: currentAbortController.signal });
+  clearTimeout(timer);
+  if (!res.ok || !res.body) { currentAbortController = null; return false; }
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let responseBubble = null;
+  let responseEntry = null;
+  let gotDone = false;
+
+  $('activity-bar').classList.add('visible');
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+
+    // Parse SSE events from buffer
+    const parts = buffer.split('\n\n');
+    buffer = parts.pop(); // keep incomplete chunk
+
+    for (const part of parts) {
+      if (!part.trim()) continue;
+      let eventType = 'message';
+      let dataStr = '';
+      for (const line of part.split('\n')) {
+        if (line.startsWith('event: ')) eventType = line.slice(7).trim();
+        else if (line.startsWith('data: ')) dataStr = line.slice(6);
+      }
+      if (!dataStr) continue;
+      let data;
+      try { data = JSON.parse(dataStr); } catch { continue; }
+
+      if (eventType === 'activity') {
+        $('activity-text').textContent = data.text || '';
+      } else if (eventType === 'partial') {
+        removeThinking();
+        if (!responseBubble) {
+          responseEntry = document.createElement('div');
+          responseEntry.className = 'entry';
+          responseBubble = document.createElement('div');
+          responseBubble.className = 'response-bubble';
+          responseEntry.appendChild(responseBubble);
+          $conv.appendChild(responseEntry);
+        }
+        responseBubble.textContent = data.text || '';
+        $conv.scrollTop = $conv.scrollHeight;
+      } else if (eventType === 'done') {
+        gotDone = true;
+        removeThinking();
+        // Replace partial bubble with final text
+        if (responseBubble) {
+          responseBubble.textContent = data.response_text || '';
+        } else {
+          responseEntry = document.createElement('div');
+          responseEntry.className = 'entry';
+          responseBubble = document.createElement('div');
+          responseBubble.className = 'response-bubble';
+          responseBubble.textContent = data.response_text || '';
+          responseEntry.appendChild(responseBubble);
+          $conv.appendChild(responseEntry);
+        }
+        // Add timing info
+        if (data.timing && responseEntry) {
+          const t = document.createElement('div');
+          t.className = 'timing';
+          t.textContent = data.timing.claude + 's';
+          responseEntry.appendChild(t);
+        }
+        if (data.context_tokens) updateContext(data.context_tokens);
+        if (data.options && data.options.length > 0) showOptions(data.options);
+        else clearOptions();
+        $conv.scrollTop = $conv.scrollHeight;
+      }
+    }
+  }
+
+  $('activity-bar').classList.remove('visible');
+  currentAbortController = null;
+
+  if (!gotDone) return false;
+  return true;
 }
 
 async function startRecording() {
@@ -390,6 +537,7 @@ function playBase64Audio(b64) {
 function setUI(state) {
   uiState = state;
   $rec.className = 'record-btn' + (state === 'recording' ? ' recording' : '') + (state !== 'idle' && state !== 'recording' ? ' disabled' : '');
+  $('attach-btn').className = 'attach-btn' + (state !== 'idle' ? ' disabled' : '');
   const labels = { idle: '', recording: 'recording', transcribing: 'transcribing...', processing: '', listening: 'playing audio' };
   $('status-line').textContent = labels[state] || '';
   if (state === 'processing') {
@@ -456,6 +604,98 @@ $('back-btn').addEventListener('click', () => {
   $('voice-screen').style.display = 'none'; $('session-screen').style.display = 'flex';
   sessionId = null; $conv.textContent = ''; clearOptions(); loadSessions();
 });
+
+// Image upload
+$('attach-btn').addEventListener('click', () => { if (uiState === 'idle') $('image-input').click(); });
+$('image-input').addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  if (!file || !sessionId) return;
+  $('image-input').value = '';
+  addMessage('user', 'uploading image...');
+  addThinking(); setUI('processing'); startActivityPolling();
+  try {
+    const form = new FormData();
+    form.append('session_id', sessionId);
+    form.append('image', file);
+    form.append('caption', 'User uploaded an image. Describe what you see and ask how to help.');
+    const res = await fetch(API + '/prompt/image', { method: 'POST', body: form });
+    const data = await res.json();
+    removeThinking();
+    addMessage('assistant', data.response_text, data.timing);
+    sessionState = data.state;
+    if (data.context_tokens) updateContext(data.context_tokens);
+    if (data.options && data.options.length > 0) showOptions(data.options);
+    else clearOptions();
+    if (ttsEnabled && data.audio_url) {
+      setUI('listening');
+      await playBase64Audio(data.audio_url);
+    }
+  } catch(e) {
+    removeThinking();
+    addMessage('assistant', 'error uploading image: ' + (e.message || 'failed'));
+  }
+  stopActivityPolling(); setUI('idle');
+});
+
+// Help button toggles shortcuts in settings modal
+$('help-btn').addEventListener('click', () => {
+  $('shortcuts-section').style.display = 'block';
+  updateSettingsUI();
+  $('settings-modal').classList.add('visible');
+});
+
+// Keyboard shortcuts
+let escPending = false;
+document.addEventListener('keydown', (e) => {
+  const mod = e.metaKey || e.ctrlKey;
+
+  // Cmd/Ctrl+K — focus text input
+  if (mod && e.key === 'k') {
+    e.preventDefault();
+    $('text-input').focus();
+    return;
+  }
+
+  // Cmd/Ctrl+, — open settings
+  if (mod && e.key === ',') {
+    e.preventDefault();
+    updateSettingsUI();
+    $('settings-modal').classList.add('visible');
+    return;
+  }
+
+  // Escape
+  if (e.key === 'Escape') {
+    // Close modal first if open
+    if ($('settings-modal').classList.contains('visible')) {
+      $('settings-modal').classList.remove('visible');
+      return;
+    }
+    // Cancel recording
+    if (uiState === 'recording' && mediaRecorder) {
+      mediaRecorder.stream.getTracks().forEach(t => t.stop());
+      mediaRecorder = null;
+      setUI('idle');
+      return;
+    }
+    // Cancel processing — two-stage
+    if (uiState === 'processing') {
+      if (escPending) {
+        // Second Esc — actually cancel
+        escPending = false;
+        $('cancel-option').style.display = 'none';
+        if (currentAbortController) currentAbortController.abort();
+      } else {
+        // First Esc — show cancel option
+        escPending = true;
+        $('cancel-option').style.display = 'block';
+        setTimeout(() => { escPending = false; $('cancel-option').style.display = 'none'; }, 3000);
+      }
+      return;
+    }
+  }
+});
+
 loadSessions();
 </script>
 </body>

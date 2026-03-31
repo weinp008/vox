@@ -1,17 +1,19 @@
 from __future__ import annotations
 
 import base64
+import json
 import os
 
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.responses import StreamingResponse
 
 from app.commands import detect_command
 from app.config import settings
-from app.claude_code import ClaudeCodeSettings, current_settings, get_activity, get_claude_code_response
+from app.claude_code import ClaudeCodeSettings, current_settings, get_activity, get_claude_code_response, stream_claude_code_response
 from app.llm import get_claude_response
 from app.models import (
     CommandType,
@@ -41,6 +43,11 @@ STATIC_DIR = os.path.join(os.path.dirname(__file__), "..", "static")
 
 @app.get("/")
 async def root():
+    return FileResponse(os.path.join(STATIC_DIR, "landing.html"))
+
+
+@app.get("/app")
+async def app_page():
     return FileResponse(os.path.join(STATIC_DIR, "index.html"))
 
 
@@ -284,6 +291,38 @@ async def list_projects():
 async def session_activity(session_id: str):
     """Get live activity log for a session (poll during processing)."""
     return {"activity": get_activity(session_id)}
+
+
+@app.get("/prompt/stream")
+async def prompt_stream(
+    session_id: str = Query(...),
+    text: str = Query(...),
+    tts: bool = Query(False),
+):
+    """SSE streaming endpoint for Claude Code responses."""
+    session = get_session(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    async def event_generator():
+        try:
+            async for evt in stream_claude_code_response(session, text):
+                evt_type = evt.get("type", "unknown")
+                data = json.dumps(evt, default=str)
+                yield f"event: {evt_type}\ndata: {data}\n\n"
+        except Exception as e:
+            error_data = json.dumps({"type": "done", "response_text": f"Streaming error: {e}", "response_type": "freeform", "options": None, "timing": {"claude": 0}, "context_tokens": 0, "edited_files": []})
+            yield f"event: done\ndata: {error_data}\n\n"
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @app.delete("/session/{session_id}")
